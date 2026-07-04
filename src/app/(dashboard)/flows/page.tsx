@@ -16,6 +16,15 @@ import {
   HelpCircle,
   UserPlus,
   FileText,
+  Calendar,
+  Package,
+  Star,
+  Clock,
+  Calculator,
+  Mail,
+  Headphones,
+  Ticket,
+  ShoppingCart,
 } from "lucide-react";
 
 import { useCan } from "@/hooks/use-can";
@@ -70,15 +79,26 @@ interface TemplateSummary {
   slug: string;
   name: string;
   description: string;
-  icon: "MessageSquare" | "HelpCircle" | "UserPlus";
+  icon: keyof typeof TEMPLATE_ICONS;
   trigger_type: string;
   node_count: number;
 }
 
+// Keep in sync with the `icon` union in src/lib/flows/templates.ts.
+// An unmapped name still renders (FileText fallback at the call site).
 const TEMPLATE_ICONS = {
   MessageSquare,
   HelpCircle,
   UserPlus,
+  Calendar,
+  Package,
+  Star,
+  Clock,
+  Calculator,
+  Mail,
+  Headphones,
+  Ticket,
+  ShoppingCart,
 } as const;
 
 export default function FlowsPage() {

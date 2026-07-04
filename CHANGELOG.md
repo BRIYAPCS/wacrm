@@ -9,6 +9,19 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.8.1] — 2026-07-04
+
+### Added
+
+- **Nine more starter flow templates**, bringing the New-flow gallery to
+  twelve: **appointment booking**, **order status**, **feedback survey**,
+  **after-hours responder**, **quote request** (validated email),
+  **newsletter opt-in** (validated email), **support triage**, **event
+  RSVP**, and an **abandoned-cart nudge** — a `manual`-trigger flow you
+  launch from a conversation with **Run a flow**. All are
+  clone-and-activate ready (they avoid account-specific tag IDs), and a
+  test asserts every template passes activation validation. No migration.
+
 ## [0.8.0] — 2026-07-03
 
 Operational hardening + Flows completion. Adds one-command database
