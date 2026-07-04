@@ -107,6 +107,13 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+  /**
+   * Mobile/tablet (<lg) contact-info opener. On small screens the contact
+   * sidebar can't sit beside the thread, so the page opens it in a Sheet;
+   * this button (rendered lg:hidden) is the only way to reach a contact's
+   * tags / deals / notes on touch devices.
+   */
+  onOpenContactInfo?: () => void;
 }
 
 function formatDateSeparator(dateStr: string): string {
@@ -165,6 +172,7 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
+  onOpenContactInfo,
 }: MessageThreadProps) {
   const { user, profile, account } = useAuth();
   const { getPresence, getRow, now } = usePresence();
@@ -862,6 +870,22 @@ export function MessageThread({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Contact-info opener — mobile/tablet only (<lg). The contact
+              sidebar can't sit beside the thread on narrow screens, so this
+              opens it in a Sheet; without it, tags/deals/notes are
+              unreachable on touch devices. */}
+          {onOpenContactInfo && (
+            <button
+              type="button"
+              onClick={onOpenContactInfo}
+              aria-label="Show contact info"
+              title="Contact info"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+            >
+              <PanelRightOpen className="h-4 w-4" />
+            </button>
+          )}
+
           {/* Contact-panel toggle — desktop only. The contact sidebar
               eats a chunk of horizontal width that crowds the thread on
               smaller laptops; this lets agents reclaim it when they just

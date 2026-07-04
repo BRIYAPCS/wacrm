@@ -33,6 +33,9 @@ import { format } from "date-fns";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /** Override the root layout — e.g. full-width + no border inside the
+   *  mobile contact Sheet, vs the fixed-width bordered desktop panel. */
+  className?: string;
 }
 
 interface AiSummary {
@@ -47,7 +50,7 @@ const SENTIMENT_CLASS: Record<AiSummary["sentiment"], string> = {
   negative: "border border-red-500/30 bg-red-500/10 text-red-400",
 };
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, className }: ContactSidebarProps) {
   const { accountId, canSendMessages } = useAuth();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -268,7 +271,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   if (!contact) {
     return (
-      <div className="flex h-full w-70 items-center justify-center border-l border-border bg-card">
+      <div
+        className={cn(
+          "flex h-full w-70 items-center justify-center border-l border-border bg-card",
+          className,
+        )}
+      >
         <p className="text-sm text-muted-foreground">Select a conversation</p>
       </div>
     );
@@ -278,7 +286,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="flex h-full w-70 flex-col border-l border-border bg-card">
+    <div
+      className={cn(
+        "flex h-full w-70 flex-col border-l border-border bg-card",
+        className,
+      )}
+    >
       <ScrollArea className="flex-1">
         <div className="p-4">
           {/* Contact Info */}
