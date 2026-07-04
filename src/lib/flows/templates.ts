@@ -59,8 +59,22 @@ export interface FlowTemplate {
   slug: string;
   name: string;
   description: string;
-  /** Used by the gallery to surface a relevant icon. lucide-react name. */
-  icon: "MessageSquare" | "HelpCircle" | "UserPlus";
+  /** Used by the gallery to surface a relevant icon. lucide-react name.
+   *  Keep this union in sync with `TEMPLATE_ICONS` in the flows page —
+   *  an unmapped name falls back to a generic icon, not a crash. */
+  icon:
+    | "MessageSquare"
+    | "HelpCircle"
+    | "UserPlus"
+    | "Calendar"
+    | "Package"
+    | "Star"
+    | "Clock"
+    | "Calculator"
+    | "Mail"
+    | "Headphones"
+    | "Ticket"
+    | "ShoppingCart";
   trigger_type: "keyword" | "first_inbound_message" | "manual";
   trigger_config: KeywordTriggerConfig | Record<string, unknown>;
   entry_node_id: string;
@@ -286,6 +300,501 @@ const LEAD_CAPTURE: FlowTemplate = {
 };
 
 // ============================================================
+// 4. Appointment booking — collect details, confirm, hand off
+// ============================================================
+const APPOINTMENT_BOOKING: FlowTemplate = {
+  slug: "appointment_booking",
+  name: "Appointment booking",
+  description:
+    "Collect a customer's name, the service they want, and their preferred time, then hand off to your team to confirm the slot.",
+  icon: "Calendar",
+  trigger_type: "keyword",
+  trigger_config: {
+    keywords: ["book", "appointment", "schedule", "booking"],
+    match_type: "contains",
+  },
+  entry_node_id: "start",
+  nodes: [
+    { node_key: "start", node_type: "start", config: { next_node_key: "greet" } },
+    {
+      node_key: "greet",
+      node_type: "send_message",
+      config: {
+        text: "Happy to get you booked in! 📅 I'll grab a few quick details.",
+        next_node_key: "ask_name",
+      },
+    },
+    {
+      node_key: "ask_name",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "First, what's your full name?",
+        var_key: "name",
+        next_node_key: "ask_service",
+      },
+    },
+    {
+      node_key: "ask_service",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Thanks {{vars.name}}! Which service would you like to book?",
+        var_key: "service",
+        next_node_key: "ask_time",
+      },
+    },
+    {
+      node_key: "ask_time",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "What day and time works best for you?",
+        var_key: "preferred_time",
+        next_node_key: "confirm",
+      },
+    },
+    {
+      node_key: "confirm",
+      node_type: "send_buttons",
+      config: {
+        text: "Perfect — shall I pass this to our team to confirm your slot?",
+        buttons: [
+          { reply_id: "yes", title: "Yes, please", next_node_key: "handoff" },
+          { reply_id: "restart", title: "Start over", next_node_key: "greet" },
+        ],
+      },
+    },
+    {
+      node_key: "handoff",
+      node_type: "handoff",
+      config: {
+        note: "Appointment request — name={{vars.name}}, service={{vars.service}}, preferred time={{vars.preferred_time}}. Please confirm the slot.",
+      },
+    },
+  ],
+};
+
+// ============================================================
+// 5. Order status — capture an order number, hand off to check
+// ============================================================
+const ORDER_STATUS: FlowTemplate = {
+  slug: "order_status",
+  name: "Order status",
+  description:
+    "Customers asking about an order get prompted for their order number, then handed off to your team to look it up.",
+  icon: "Package",
+  trigger_type: "keyword",
+  trigger_config: {
+    keywords: ["order", "track", "tracking", "status", "where"],
+    match_type: "contains",
+  },
+  entry_node_id: "start",
+  nodes: [
+    { node_key: "start", node_type: "start", config: { next_node_key: "ask_order" } },
+    {
+      node_key: "ask_order",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Sure! What's your order number? 📦",
+        var_key: "order_number",
+        next_node_key: "ack",
+      },
+    },
+    {
+      node_key: "ack",
+      node_type: "send_message",
+      config: {
+        text: "Thanks! Let me pull that up for you — one moment.",
+        next_node_key: "handoff",
+      },
+    },
+    {
+      node_key: "handoff",
+      node_type: "handoff",
+      config: {
+        note: "Order status request for order {{vars.order_number}} — please look it up and reply.",
+      },
+    },
+  ],
+};
+
+// ============================================================
+// 6. Feedback survey — branch on satisfaction, salvage unhappy
+// ============================================================
+const FEEDBACK_SURVEY: FlowTemplate = {
+  slug: "feedback_survey",
+  name: "Feedback survey",
+  description:
+    "Ask how the experience was. Happy customers get nudged toward a review; unhappy ones are asked what went wrong and handed off to be made right.",
+  icon: "Star",
+  trigger_type: "keyword",
+  trigger_config: {
+    keywords: ["feedback", "review", "survey"],
+    match_type: "contains",
+  },
+  entry_node_id: "start",
+  nodes: [
+    { node_key: "start", node_type: "start", config: { next_node_key: "rate" } },
+    {
+      node_key: "rate",
+      node_type: "send_buttons",
+      config: {
+        text: "How was your experience with us?",
+        buttons: [
+          { reply_id: "good", title: "Great 🌟", next_node_key: "thanks_good" },
+          { reply_id: "ok", title: "It was okay", next_node_key: "thanks_ok" },
+          { reply_id: "bad", title: "Not great", next_node_key: "ask_more" },
+        ],
+      },
+    },
+    {
+      node_key: "thanks_good",
+      node_type: "send_message",
+      config: {
+        text: "So glad to hear it! 🙌 A quick review would mean the world: https://example.com/review",
+        next_node_key: "end",
+      },
+    },
+    {
+      node_key: "thanks_ok",
+      node_type: "send_message",
+      config: {
+        text: "Thanks for the honest feedback — we're always working to improve!",
+        next_node_key: "end",
+      },
+    },
+    {
+      node_key: "ask_more",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "We're sorry to hear that. What went wrong? We'd like to make it right.",
+        var_key: "feedback",
+        next_node_key: "handoff",
+      },
+    },
+    {
+      node_key: "handoff",
+      node_type: "handoff",
+      config: {
+        note: "Unhappy-customer feedback to follow up on: {{vars.feedback}}",
+      },
+    },
+    { node_key: "end", node_type: "end", config: {} },
+  ],
+};
+
+// ============================================================
+// 7. After-hours auto-responder — greet, offer to take a message
+// ============================================================
+const AFTER_HOURS: FlowTemplate = {
+  slug: "after_hours",
+  name: "After-hours responder",
+  description:
+    "Catch first messages when you're closed: share your hours and offer to take a message that lands with your team for the morning.",
+  icon: "Clock",
+  trigger_type: "first_inbound_message",
+  trigger_config: {},
+  entry_node_id: "start",
+  nodes: [
+    { node_key: "start", node_type: "start", config: { next_node_key: "notice" } },
+    {
+      node_key: "notice",
+      node_type: "send_message",
+      config: {
+        text: "Thanks for reaching out! 🌙 Our team is offline right now (hours: Mon–Fri, 9am–6pm). We'll get back to you as soon as we're back.",
+        next_node_key: "offer",
+      },
+    },
+    {
+      node_key: "offer",
+      node_type: "send_buttons",
+      config: {
+        text: "Would you like to leave a message in the meantime?",
+        buttons: [
+          { reply_id: "yes", title: "Leave a message", next_node_key: "ask_msg" },
+          { reply_id: "no", title: "No thanks", next_node_key: "bye" },
+        ],
+      },
+    },
+    {
+      node_key: "ask_msg",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Go ahead — what can we help you with? We'll reply first thing.",
+        var_key: "message",
+        next_node_key: "handoff",
+      },
+    },
+    {
+      node_key: "handoff",
+      node_type: "handoff",
+      config: {
+        note: "After-hours message to follow up on: {{vars.message}}",
+      },
+    },
+    {
+      node_key: "bye",
+      node_type: "send_message",
+      config: {
+        text: "No problem — we'll be here when you're back. 👋",
+        next_node_key: "end",
+      },
+    },
+    { node_key: "end", node_type: "end", config: {} },
+  ],
+};
+
+// ============================================================
+// 8. Quote request — capture name + email (validated) + details
+// ============================================================
+const QUOTE_REQUEST: FlowTemplate = {
+  slug: "quote_request",
+  name: "Quote request",
+  description:
+    "Qualify pricing enquiries: collect a name, a validated email, and what they need, then hand off to sales to send a quote.",
+  icon: "Calculator",
+  trigger_type: "keyword",
+  trigger_config: {
+    keywords: ["quote", "pricing", "estimate", "cost", "how much"],
+    match_type: "contains",
+  },
+  entry_node_id: "start",
+  nodes: [
+    { node_key: "start", node_type: "start", config: { next_node_key: "intro" } },
+    {
+      node_key: "intro",
+      node_type: "send_message",
+      config: {
+        text: "Happy to put a quote together for you! 📝 Just a few quick questions.",
+        next_node_key: "ask_name",
+      },
+    },
+    {
+      node_key: "ask_name",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "What's your name?",
+        var_key: "name",
+        next_node_key: "ask_email",
+      },
+    },
+    {
+      node_key: "ask_email",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Thanks {{vars.name}}! What's the best email to send your quote to?",
+        var_key: "email",
+        // Showcases the collect_input email validator — a reply that
+        // isn't email-shaped gets reprompted instead of advancing.
+        validation: "email",
+        next_node_key: "ask_details",
+      },
+    },
+    {
+      node_key: "ask_details",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Briefly, what would you like a quote for?",
+        var_key: "details",
+        next_node_key: "handoff",
+      },
+    },
+    {
+      node_key: "handoff",
+      node_type: "handoff",
+      config: {
+        note: "Quote request — {{vars.name}} ({{vars.email}}): {{vars.details}}",
+      },
+    },
+  ],
+};
+
+// ============================================================
+// 9. Newsletter opt-in — validated email, hand off to add to list
+// ============================================================
+const NEWSLETTER_OPTIN: FlowTemplate = {
+  slug: "newsletter_optin",
+  name: "Newsletter opt-in",
+  description:
+    "Turn a 'subscribe' keyword into a captured, validated email address ready to add to your mailing list.",
+  icon: "Mail",
+  trigger_type: "keyword",
+  trigger_config: {
+    keywords: ["subscribe", "newsletter", "updates", "join"],
+    match_type: "contains",
+  },
+  entry_node_id: "start",
+  nodes: [
+    { node_key: "start", node_type: "start", config: { next_node_key: "ask_email" } },
+    {
+      node_key: "ask_email",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Great! What email should we add to our newsletter? ✉️",
+        var_key: "email",
+        validation: "email",
+        next_node_key: "confirm",
+      },
+    },
+    {
+      node_key: "confirm",
+      node_type: "send_message",
+      config: {
+        text: "You're on the list — welcome aboard! 🎉 Reply STOP anytime to unsubscribe.",
+        next_node_key: "handoff",
+      },
+    },
+    {
+      node_key: "handoff",
+      node_type: "handoff",
+      config: {
+        note: "Newsletter opt-in — add {{vars.email}} to the mailing list.",
+      },
+    },
+  ],
+};
+
+// ============================================================
+// 10. Support triage — 3-way button routing to the right team
+// ============================================================
+const SUPPORT_TRIAGE: FlowTemplate = {
+  slug: "support_triage",
+  name: "Support triage",
+  description:
+    "Route support requests to the right team in one tap — billing, technical, or general — each handed off with context.",
+  icon: "Headphones",
+  trigger_type: "keyword",
+  trigger_config: {
+    keywords: ["support", "help", "issue", "problem"],
+    match_type: "contains",
+  },
+  entry_node_id: "start",
+  nodes: [
+    { node_key: "start", node_type: "start", config: { next_node_key: "menu" } },
+    {
+      node_key: "menu",
+      node_type: "send_buttons",
+      config: {
+        text: "Happy to help! What do you need a hand with?",
+        buttons: [
+          { reply_id: "billing", title: "Billing", next_node_key: "billing_ho" },
+          { reply_id: "tech", title: "Technical", next_node_key: "tech_ho" },
+          { reply_id: "other", title: "Something else", next_node_key: "other_ho" },
+        ],
+      },
+    },
+    {
+      node_key: "billing_ho",
+      node_type: "handoff",
+      config: { note: "Billing support request — route to the billing/finance team." },
+    },
+    {
+      node_key: "tech_ho",
+      node_type: "handoff",
+      config: { note: "Technical support request — route to the tech team." },
+    },
+    {
+      node_key: "other_ho",
+      node_type: "handoff",
+      config: { note: "General support request." },
+    },
+  ],
+};
+
+// ============================================================
+// 11. Event RSVP — confirm / decline / maybe, each handed off
+// ============================================================
+const EVENT_RSVP: FlowTemplate = {
+  slug: "event_rsvp",
+  name: "Event RSVP",
+  description:
+    "Collect RSVPs in one tap — confirm, decline, or maybe — and hand each off so you can update your guest list.",
+  icon: "Ticket",
+  trigger_type: "keyword",
+  trigger_config: { keywords: ["rsvp", "event", "invite"], match_type: "contains" },
+  entry_node_id: "start",
+  nodes: [
+    { node_key: "start", node_type: "start", config: { next_node_key: "ask" } },
+    {
+      node_key: "ask",
+      node_type: "send_buttons",
+      config: {
+        text: "Thanks for your interest! Will you be joining us? 🎟️",
+        buttons: [
+          { reply_id: "yes", title: "I'll be there", next_node_key: "yes_ho" },
+          { reply_id: "no", title: "Can't make it", next_node_key: "no_ho" },
+          { reply_id: "maybe", title: "Maybe", next_node_key: "maybe_ho" },
+        ],
+      },
+    },
+    {
+      node_key: "yes_ho",
+      node_type: "handoff",
+      config: { note: "RSVP: attending — add to the confirmed guest list." },
+    },
+    {
+      node_key: "no_ho",
+      node_type: "handoff",
+      config: { note: "RSVP: not attending — mark as declined." },
+    },
+    {
+      node_key: "maybe_ho",
+      node_type: "handoff",
+      config: { note: "RSVP: maybe — follow up closer to the date." },
+    },
+  ],
+};
+
+// ============================================================
+// 12. Abandoned-cart nudge — a MANUAL flow an agent runs from the
+//     inbox (see the "Run a flow" action) to re-engage a contact.
+// ============================================================
+const ABANDONED_CART: FlowTemplate = {
+  slug: "abandoned_cart",
+  name: "Abandoned-cart nudge",
+  description:
+    "A manual flow an agent launches from a conversation (Run a flow) to nudge a customer who didn't finish checking out.",
+  icon: "ShoppingCart",
+  trigger_type: "manual",
+  trigger_config: {},
+  entry_node_id: "start",
+  nodes: [
+    { node_key: "start", node_type: "start", config: { next_node_key: "nudge" } },
+    {
+      node_key: "nudge",
+      node_type: "send_message",
+      config: {
+        text: "Hi! 👋 We noticed you didn't finish your order — your items are still saved. Can we help you complete it?",
+        next_node_key: "offer",
+      },
+    },
+    {
+      node_key: "offer",
+      node_type: "send_buttons",
+      config: {
+        text: "Would you like a hand checking out?",
+        buttons: [
+          { reply_id: "yes", title: "Yes, help me", next_node_key: "help_ho" },
+          { reply_id: "no", title: "Maybe later", next_node_key: "bye" },
+        ],
+      },
+    },
+    {
+      node_key: "help_ho",
+      node_type: "handoff",
+      config: { note: "Customer wants help completing an abandoned order — assist with checkout." },
+    },
+    {
+      node_key: "bye",
+      node_type: "send_message",
+      config: {
+        text: "No worries — your cart will be here whenever you're ready. 🛒",
+        next_node_key: "end",
+      },
+    },
+    { node_key: "end", node_type: "end", config: {} },
+  ],
+};
+
+// ============================================================
 // Registry
 // ============================================================
 
@@ -293,6 +802,15 @@ const TEMPLATES: Record<string, FlowTemplate> = {
   welcome_menu: WELCOME_MENU,
   faq_bot: FAQ_BOT,
   lead_capture: LEAD_CAPTURE,
+  appointment_booking: APPOINTMENT_BOOKING,
+  order_status: ORDER_STATUS,
+  feedback_survey: FEEDBACK_SURVEY,
+  after_hours: AFTER_HOURS,
+  quote_request: QUOTE_REQUEST,
+  newsletter_optin: NEWSLETTER_OPTIN,
+  support_triage: SUPPORT_TRIAGE,
+  event_rsvp: EVENT_RSVP,
+  abandoned_cart: ABANDONED_CART,
 };
 
 export function getFlowTemplate(slug: string): FlowTemplate | null {
