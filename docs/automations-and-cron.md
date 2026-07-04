@@ -1,6 +1,6 @@
 # Automations, Flows & the cron pinger
 
-Two features rely on a **scheduled ping** to advance work that isn't
+A few features rely on a **scheduled ping** to advance work that isn't
 triggered by a live inbound message:
 
 - **Automation "Wait" steps** — a Wait pauses an automation for N
@@ -11,8 +11,12 @@ triggered by a live inbound message:
   new triggers. (This one is **not optional** if you use Flows — without
   it, a customer who drops out of a flow can be blocked from re-entering
   it.)
+- **Scheduled messages (send-later)** — a message an agent schedules for
+  a future time is sent by `GET /api/scheduled-messages/cron`. Required
+  if you use the inbox "Schedule" action.
 
-If you use neither Wait steps nor Flows, you can skip this entirely.
+If you use none of these, you can skip this entirely. The committed
+GitHub Actions workflow (Option A below) already pings all three.
 
 ## 1. Set the shared secret
 

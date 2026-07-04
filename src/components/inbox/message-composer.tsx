@@ -21,15 +21,26 @@ import {
   Loader2,
   Sparkles,
   MessageSquareText,
+  CalendarClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScheduledMessagesStrip } from "./scheduled-messages-strip";
 import { useCan } from "@/hooks/use-can";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -171,6 +182,12 @@ export function MessageComposer({
     );
   }, [pickerOpen, pickerQuery, canned]);
 
+  // Send-later (scheduled messages).
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState("");
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduledRefreshKey, setScheduledRefreshKey] = useState(0);
+
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
   const [draft, setDraft] = useState<MediaDraft | null>(null);
@@ -251,6 +268,66 @@ export function MessageComposer({
       setSending(false);
     }
   }, [text, sending, sessionExpired, onSend, replyTo?.id]);
+
+  const openSchedule = useCallback(() => {
+    if (inputsDisabled) return;
+    if (!text.trim()) {
+      toast.error("Type a message first, then schedule it.");
+      return;
+    }
+    // Default to 1 hour out, formatted for <input type="datetime-local">
+    // (local wall-clock, minute precision).
+    const d = new Date(Date.now() + 60 * 60 * 1000);
+    setScheduleAt(
+      new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16),
+    );
+    setScheduleOpen(true);
+  }, [inputsDisabled, text]);
+
+  const handleSchedule = useCallback(async () => {
+    const trimmed = text.trim();
+    if (!trimmed || !scheduleAt || scheduling) return;
+    const when = new Date(scheduleAt);
+    if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000) {
+      toast.error("Pick a time in the future.");
+      return;
+    }
+    setScheduling(true);
+    try {
+      const res = await fetch("/api/scheduled-messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId,
+          body: trimmed,
+          sendAt: when.toISOString(),
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(payload.error || "Failed to schedule");
+        return;
+      }
+      toast.success(
+        `Scheduled for ${when.toLocaleString(undefined, {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })}`,
+      );
+      setText("");
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      setScheduleOpen(false);
+      setScheduledRefreshKey((k) => k + 1);
+    } catch {
+      toast.error("Could not reach the server");
+    } finally {
+      setScheduling(false);
+    }
+  }, [text, scheduleAt, scheduling, conversationId]);
 
   const selectCanned = useCallback(
     (item: CannedItem) => {
@@ -559,6 +636,14 @@ export function MessageComposer({
         </div>
       )}
 
+      {!readOnly && (
+        <ScheduledMessagesStrip
+          conversationId={conversationId}
+          refreshKey={scheduledRefreshKey}
+          onChange={() => setScheduledRefreshKey((k) => k + 1)}
+        />
+      )}
+
       {/* Hidden file inputs driven by the attach menu. */}
       <input
         ref={imageInputRef}
@@ -744,6 +829,19 @@ export function MessageComposer({
             <MessageSquareText className="h-4 w-4" />
           </GatedButton>
 
+          <GatedButton
+            variant="ghost"
+            size="sm"
+            canAct={!readOnly}
+            gateReason="send messages"
+            disabled={sessionExpired}
+            title={readOnly ? undefined : "Schedule for later"}
+            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+            onClick={openSchedule}
+          >
+            <CalendarClock className="h-4 w-4" />
+          </GatedButton>
+
           <textarea
             ref={textareaRef}
             value={text}
@@ -790,6 +888,44 @@ export function MessageComposer({
           Tap the ✨ to draft a reply with AI — you can edit it before sending
         </p>
       )}
+
+      <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+        <DialogContent className="bg-popover border-border sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-popover-foreground">
+              Schedule message
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              We&apos;ll send it automatically at the time you pick (your local
+              time).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="block text-xs text-muted-foreground">Send at</label>
+            <Input
+              type="datetime-local"
+              value={scheduleAt}
+              onChange={(e) => setScheduleAt(e.target.value)}
+            />
+            <p className="line-clamp-3 rounded bg-muted px-2 py-1.5 text-xs whitespace-pre-wrap text-muted-foreground">
+              {text.trim()}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setScheduleOpen(false)}
+              disabled={scheduling}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSchedule} disabled={scheduling || !scheduleAt}>
+              {scheduling && <Loader2 className="size-4 animate-spin" />}
+              Schedule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
