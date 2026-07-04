@@ -30,6 +30,66 @@ describe("validateFlowForActivation — happy path", () => {
   });
 });
 
+describe("validateFlowForActivation — collect_input validation rule", () => {
+  const build = (ci: Record<string, unknown>) => ({
+    flow: {
+      name: "F",
+      trigger_type: "keyword" as const,
+      trigger_config: { keywords: ["hi"] },
+      entry_node_id: "start",
+    },
+    nodes: [
+      { node_key: "start", node_type: "start", config: { next_node_key: "ci" } },
+      {
+        node_key: "ci",
+        node_type: "collect_input",
+        config: {
+          prompt_text: "Your email?",
+          var_key: "email",
+          next_node_key: "end",
+          ...ci,
+        },
+      },
+      { node_key: "end", node_type: "end", config: {} },
+    ],
+  });
+
+  it("accepts any/email/phone with no extra config", () => {
+    for (const v of ["any", "email", "phone"]) {
+      const { flow, nodes } = build({ validation: v });
+      expect(validateFlowForActivation(flow, nodes)).toEqual([]);
+    }
+  });
+
+  it("requires a pattern for regex validation", () => {
+    const { flow, nodes } = build({ validation: "regex" });
+    expect(
+      validateFlowForActivation(flow, nodes).some((i) => i.field === "regex"),
+    ).toBe(true);
+  });
+
+  it("rejects an uncompilable regex pattern", () => {
+    const { flow, nodes } = build({ validation: "regex", regex: "([" });
+    expect(
+      validateFlowForActivation(flow, nodes).some((i) => i.field === "regex"),
+    ).toBe(true);
+  });
+
+  it("accepts a valid regex pattern", () => {
+    const { flow, nodes } = build({ validation: "regex", regex: "^\\d{4}$" });
+    expect(validateFlowForActivation(flow, nodes)).toEqual([]);
+  });
+
+  it("rejects an unknown validation value", () => {
+    const { flow, nodes } = build({ validation: "creditcard" });
+    expect(
+      validateFlowForActivation(flow, nodes).some(
+        (i) => i.field === "validation",
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("validateFlowForActivation — flow-level", () => {
   it("flags empty name", () => {
     expect(

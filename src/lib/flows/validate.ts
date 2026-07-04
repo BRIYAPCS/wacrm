@@ -24,6 +24,7 @@
  */
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
+import { isValidRegex } from "./input-validation";
 
 export interface ValidationIssue {
   severity: "error" | "warning";
@@ -537,6 +538,8 @@ function validateNode(
         prompt_text?: string;
         var_key?: string;
         next_node_key?: string;
+        validation?: string;
+        regex?: string;
       };
       if (!cfg.prompt_text?.trim()) {
         issues.push({
@@ -580,6 +583,40 @@ function validateNode(
           field: "next_node_key",
           message: `Collect-input points to non-existent node "${cfg.next_node_key}".`,
         });
+      }
+      // Validation rule sanity: a regex validator needs a compilable
+      // pattern, otherwise the node rejects every reply and traps the
+      // customer in a reprompt loop.
+      if (
+        cfg.validation !== undefined &&
+        !["any", "email", "phone", "regex"].includes(cfg.validation)
+      ) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "validation",
+          message: `Unknown validation "${cfg.validation}" (use any / email / phone / regex).`,
+        });
+      }
+      if (cfg.validation === "regex") {
+        if (!cfg.regex?.trim()) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "regex",
+            message: "Regex validation needs a pattern.",
+          });
+        } else if (!isValidRegex(cfg.regex)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "regex",
+            message: `Pattern "${cfg.regex}" is not a valid regular expression.`,
+          });
+        }
       }
       break;
     }
