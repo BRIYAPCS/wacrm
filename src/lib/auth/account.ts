@@ -30,6 +30,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
 import { hasMinRole, isAccountRole, type AccountRole } from "./roles";
+import {
+  effectiveTier,
+  parseOverrides,
+  resolveEntitlements,
+  checkLimit,
+  type Entitlements,
+} from "@/lib/plans/entitlements";
+import type { FeatureKey, LimitKey } from "@/lib/plans/catalog";
 
 // ------------------------------------------------------------
 // Errors
@@ -55,6 +63,24 @@ export class ForbiddenError extends Error {
 }
 
 /**
+ * Thrown when a route is gated behind a feature/limit the account's plan
+ * doesn't include. 403 (not 402) so proxies/clients treat it normally; the
+ * body carries a machine code so the client can show an upsell instead of a
+ * generic error.
+ */
+export class PlanUpgradeRequiredError extends Error {
+  readonly status = 403 as const;
+  constructor(
+    message: string,
+    readonly feature?: FeatureKey,
+    readonly limit?: LimitKey,
+  ) {
+    super(message);
+    this.name = "PlanUpgradeRequiredError";
+  }
+}
+
+/**
  * Convert one of the typed errors above (or anything else) into a
  * `NextResponse`. Routes can do:
  *
@@ -67,6 +93,17 @@ export class ForbiddenError extends Error {
  * server internals out of the wire.
  */
 export function toErrorResponse(err: unknown): NextResponse {
+  if (err instanceof PlanUpgradeRequiredError) {
+    return NextResponse.json(
+      {
+        error: err.message,
+        code: "plan_upgrade_required",
+        feature: err.feature,
+        limit: err.limit,
+      },
+      { status: err.status },
+    );
+  }
   if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
     return NextResponse.json({ error: err.message }, { status: err.status });
   }
@@ -89,6 +126,12 @@ export interface AccountContext {
   role: AccountRole;
   /** Lightweight account meta — id + name. */
   account: { id: string; name: string };
+  /**
+   * Resolved plan entitlements for this account (features + numeric
+   * limits). Loaded in the same round trip as the account. Use
+   * `requireFeature` / `requireWithinLimit` to gate routes.
+   */
+  entitlements: Entitlements;
 }
 
 /**
@@ -149,7 +192,9 @@ export async function getCurrentAccount(): Promise<AccountContext> {
   // RLS, so it stays robust against cache staleness and older schemas.
   const { data: account, error: accountErr } = await supabase
     .from("accounts")
-    .select("id, name")
+    // plan + plan_overrides added in migration 050; folded into the same
+    // point lookup so entitlement resolution costs zero extra round trips.
+    .select("id, name, plan, plan_overrides")
     .eq("id", data.account_id)
     .maybeSingle();
 
@@ -163,12 +208,27 @@ export async function getCurrentAccount(): Promise<AccountContext> {
     throw new ForbiddenError("Profile is not linked to an account");
   }
 
+  // Resolve entitlements: account tier (or the instance default from env
+  // DEFAULT_PLAN for isolated single-client deploys, else 'advanced') with
+  // per-account overrides merged on top.
+  // NEXT_PUBLIC_DEFAULT_PLAN is the per-instance default (one knob honored
+  // by both this server resolver and the client in use-auth). Only used
+  // when accounts.plan is NULL — i.e. isolated single-client deploys.
+  const entitlements = resolveEntitlements(
+    effectiveTier(
+      (account as { plan?: string | null }).plan ?? null,
+      process.env.NEXT_PUBLIC_DEFAULT_PLAN ?? null,
+    ),
+    parseOverrides((account as { plan_overrides?: unknown }).plan_overrides),
+  );
+
   return {
     supabase,
     userId: user.id,
     accountId: data.account_id,
     role: data.account_role,
     account: { id: account.id, name: account.name },
+    entitlements,
   };
 }
 
@@ -187,4 +247,45 @@ export async function requireRole(min: AccountRole): Promise<AccountContext> {
     );
   }
   return ctx;
+}
+
+// ------------------------------------------------------------
+// Plan gates — the tier analogue of requireRole. Call inside a route's
+// try/catch; the thrown PlanUpgradeRequiredError maps to a 403 with an
+// upsell code via toErrorResponse().
+// ------------------------------------------------------------
+
+/** Require the account's plan to include a feature module. */
+export function requireFeature(
+  ctx: Pick<AccountContext, "entitlements">,
+  feature: FeatureKey,
+  label?: string,
+): void {
+  if (!ctx.entitlements.features.has(feature)) {
+    throw new PlanUpgradeRequiredError(
+      `${label ?? "This feature"} isn't included in your plan.`,
+      feature,
+    );
+  }
+}
+
+/**
+ * Require adding one more of `key` to be within the plan's limit, given the
+ * CURRENT count. Enforce on create/add only — never retroactively (a
+ * downgraded account keeps existing rows but can't add past the cap).
+ */
+export function requireWithinLimit(
+  ctx: Pick<AccountContext, "entitlements">,
+  key: LimitKey,
+  currentCount: number,
+  label?: string,
+): void {
+  const check = checkLimit(ctx.entitlements, key, currentCount);
+  if (!check.allowed) {
+    throw new PlanUpgradeRequiredError(
+      `You've reached your plan's limit of ${check.limit} ${label ?? key}.`,
+      undefined,
+      key,
+    );
+  }
 }

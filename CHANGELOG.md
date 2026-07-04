@@ -9,6 +9,34 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.26.0] — 2026-07-04
+
+Foundation for **subscription tiers** (Basic / Pro / Advanced) — no
+behavior change yet. **Migration required:** apply
+`supabase/migrations/050_subscription_tiers.sql`.
+
+### Added
+
+- Per-account **plan** + **plan_overrides** columns, a `platform_admins`
+  table (locked down), and Stripe-linkage columns (unused until billing
+  ships), all via migration 050.
+- An isomorphic **plan catalogue** (`src/lib/plans/catalog.ts`) and
+  **entitlement resolver** (`entitlements.ts`) — the single source of truth
+  for what each tier includes (features + numeric limits). Imported by both
+  server and client, mirroring how the role system is shared.
+- Entitlements are now carried through the server account context
+  (`requireRole`/`getCurrentAccount`) and exposed on the client via
+  `useAuth()` (`entitlements` / `hasFeature` / `limitFor`).
+
+### Notes
+
+- **No feature is gated yet** — this release only carries the plan data.
+  Every existing account resolves to the top tier (full access), so nothing
+  changes. Enforcement, the superadmin panel, and Stripe billing land in
+  follow-up releases.
+- Single-instance deploys can set a default tier with the
+  `NEXT_PUBLIC_DEFAULT_PLAN` env var; leaving it unset means full access.
+
 ## [0.25.3] — 2026-07-04
 
 Security + correctness fixes from a full-app audit. **Migration required:**
