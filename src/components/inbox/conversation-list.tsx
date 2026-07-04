@@ -453,6 +453,7 @@ function ConversationItem({
       {/* Avatar */}
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
         {contact?.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element -- arbitrary-host avatar URL (pasteable from the UI); next/image would need an open remotePatterns allowlist (image-proxy abuse vector)
           <img
             src={contact.avatar_url}
             alt={displayName}

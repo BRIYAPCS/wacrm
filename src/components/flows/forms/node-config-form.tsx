@@ -158,6 +158,42 @@ export function NodeConfigForm({
               .
             </p>
           </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              Validate the answer
+            </label>
+            <Select
+              value={(cfg as { validation?: string }).validation ?? "any"}
+              onValueChange={(v) => onUpdateConfig({ validation: v })}
+            >
+              <SelectTrigger className="bg-muted">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">Any text</SelectItem>
+                <SelectItem value="email">Email address</SelectItem>
+                <SelectItem value="phone">Phone number</SelectItem>
+                <SelectItem value="regex">Custom pattern (regex)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              A reply that doesn&apos;t match is reprompted (per the flow&apos;s
+              fallback policy) instead of advancing.
+            </p>
+          </div>
+          {(cfg as { validation?: string }).validation === "regex" && (
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">
+                Regular expression
+              </label>
+              <Input
+                value={(cfg as { regex?: string }).regex ?? ""}
+                onChange={(e) => onUpdateConfig({ regex: e.target.value })}
+                placeholder={"^[A-Z]{2}\\d{4}$"}
+                className="bg-muted font-mono text-xs"
+              />
+            </div>
+          )}
           <NextNodeRow
             value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
             allNodes={allNodes}

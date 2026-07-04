@@ -40,6 +40,7 @@ import {
   engineSendText,
 } from "./meta-send";
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
+import { validateCollectedInput } from "./input-validation";
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
@@ -936,7 +937,16 @@ async function handleReplyForActiveRun(
   ) {
     const cfg = currentNode.config as unknown as CollectInputNodeConfig;
     const captured = message.text.trim();
-    if (captured.length > 0 && cfg.var_key) {
+    // Enforce the node's validation rule (email / phone / regex / any).
+    // An answer that fails leaves `matched` null, so it falls through to
+    // the fallback policy below — i.e. the customer gets reprompted (up
+    // to max_reprompts) then handed off / ended, exactly like an
+    // unrecognised button tap.
+    const passesValidation =
+      captured.length > 0 &&
+      !!cfg.var_key &&
+      validateCollectedInput(captured, cfg.validation, cfg.regex);
+    if (passesValidation) {
       // Persist captured value + reset reprompt count atomically.
       const newVars = { ...run.vars, [cfg.var_key]: captured };
       const { error: capErr } = await db
