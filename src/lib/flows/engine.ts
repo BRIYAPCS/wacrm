@@ -1125,3 +1125,123 @@ async function startNewRun(
     outcome: outcome.outcome === "advanced" ? "started" : outcome.outcome,
   };
 }
+
+// ============================================================
+// Manual start — an agent launches a flow for a contact from the
+// inbox (the `manual` trigger's whole purpose, but this also lets an
+// agent kick off any ACTIVE flow on demand). Bypasses trigger
+// matching; everything else (one-active-run guard, node graph walk,
+// idempotency of downstream sends) is identical to an inbound start.
+// ============================================================
+
+export type ManualStartResult =
+  | {
+      ok: true;
+      flow_run_id: string;
+      outcome: "started" | "completed" | "handed_off";
+    }
+  | {
+      ok: false;
+      reason:
+        | "flow_not_found"
+        | "flow_not_active"
+        | "no_entry_node"
+        | "no_conversation"
+        | "already_in_flow"
+        | "insert_failed";
+    };
+
+export async function startFlowManually(input: {
+  accountId: string;
+  flowId: string;
+  contactId: string;
+  /** The agent who clicked "Run flow" — recorded for the run's audit
+   *  trail. The run's sender-of-record stays the flow's author (so
+   *  outbound prompts use the same WhatsApp config path as inbound
+   *  starts), matching startNewRun. */
+  startedByUserId: string;
+}): Promise<ManualStartResult> {
+  const db = supabaseAdmin();
+  try {
+    const flow = await loadFlow(db, input.flowId);
+    // Account scoping: only flows in the caller's account are runnable.
+    if (!flow || flow.account_id !== input.accountId) {
+      return { ok: false, reason: "flow_not_found" };
+    }
+    if (flow.status !== "active") return { ok: false, reason: "flow_not_active" };
+    if (!flow.entry_node_id) return { ok: false, reason: "no_entry_node" };
+
+    // Resolve the contact's most-recent conversation in this account —
+    // the run needs one to send prompts into and to link the thread.
+    const { data: convRows } = await db
+      .from("conversations")
+      .select("id")
+      .eq("account_id", input.accountId)
+      .eq("contact_id", input.contactId)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .limit(1);
+    const conversationId = (convRows?.[0] as { id: string } | undefined)?.id;
+    if (!conversationId) return { ok: false, reason: "no_conversation" };
+
+    // One active run per contact (partial unique index). Refuse rather
+    // than silently interleave two flows in the same thread.
+    const existing = await loadActiveRunForContact(
+      db,
+      input.accountId,
+      input.contactId,
+    );
+    if (existing) return { ok: false, reason: "already_in_flow" };
+
+    const nodes = await loadAllNodes(db, flow.id);
+
+    const { data: inserted, error: insErr } = await db
+      .from("flow_runs")
+      .insert({
+        flow_id: flow.id,
+        account_id: flow.account_id,
+        user_id: flow.user_id,
+        contact_id: input.contactId,
+        conversation_id: conversationId,
+        status: "active",
+        current_node_key: flow.entry_node_id,
+      })
+      .select("*")
+      .maybeSingle();
+    if (insErr || !inserted) {
+      const msg = insErr?.message ?? "";
+      // 23505 — a concurrent inbound/manual start beat us to the unique
+      // index. Same "already running" outcome from the user's view.
+      if (msg.includes("23505") || msg.includes("duplicate key")) {
+        return { ok: false, reason: "already_in_flow" };
+      }
+      console.error("[flows] startFlowManually insert error:", msg);
+      return { ok: false, reason: "insert_failed" };
+    }
+
+    const run = inserted as FlowRunRow;
+    await logEvent(db, run.id, "started", flow.entry_node_id, {
+      flow_id: flow.id,
+      trigger_type: "manual",
+      started_by: input.startedByUserId,
+    });
+    const { error: incErr } = await db.rpc("increment_flow_execution_count", {
+      p_flow_id: flow.id,
+    });
+    if (incErr) {
+      console.error("[flows] execution_count rpc error:", incErr.message);
+    }
+
+    const outcome = await advanceFromNodeKey(db, run, flow.entry_node_id, nodes);
+    return {
+      ok: true,
+      flow_run_id: run.id,
+      outcome: outcome.outcome === "advanced" ? "started" : outcome.outcome,
+    };
+  } catch (err) {
+    console.error(
+      "[flows] startFlowManually threw:",
+      err instanceof Error ? err.message : err,
+    );
+    return { ok: false, reason: "insert_failed" };
+  }
+}
