@@ -9,6 +9,20 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.24.1] — 2026-07-04
+
+Chat-background polish. No migration, no app-code change beyond the inbox.
+
+### Fixed
+
+- Uploaded chat wallpapers are now **garbage-collected**: replacing or
+  clearing an image background deletes the previous object from the
+  `chat-backgrounds` bucket, but only after confirming no other chat (or
+  the account default) still references it — so shared images are never
+  broken. Cleanup runs server-side; the account-default save moved from a
+  direct client write to `PATCH /api/inbox/background` so validation and
+  cleanup live in one place.
+
 ## [0.24.0] — 2026-07-04
 
 Customisable **chat backgrounds** (WhatsApp-style wallpapers). **Migration

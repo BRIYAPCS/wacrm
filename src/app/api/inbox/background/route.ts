@@ -1,14 +1,11 @@
 // ============================================================
-// PATCH /api/inbox/conversations/[id]/background  (admin+)
+// PATCH /api/inbox/background  (admin+)
 //
-// Set (or clear) a single conversation's chat-background override.
-// Owner/admin only — changing a thread's wallpaper is an admin act, and
-// the shared `conversations` UPDATE RLS is only agent+, so the role gate
-// is enforced here rather than in the database.
+// Set (or clear) the account-wide default chat background. Owner/admin
+// only. Handled server-side (rather than a direct client write) so token
+// validation and orphaned-image cleanup live in one place.
 //
 // Body: { background: string | null }
-//   - a valid token (see src/lib/inbox/backgrounds.ts), or
-//   - null / '' to clear the override (fall back to the account default)
 // ============================================================
 
 import { NextResponse } from "next/server";
@@ -18,20 +15,15 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit
 import { isValidBackground, parseBackground } from "@/lib/inbox/backgrounds";
 import { deleteOrphanedBackgroundImage } from "@/lib/inbox/background-cleanup";
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(request: Request) {
   try {
     const ctx = await requireRole("admin");
 
     const limit = checkRateLimit(
-      `inbox:bg:${ctx.userId}`,
+      `inbox:bg:account:${ctx.userId}`,
       RATE_LIMITS.adminAction,
     );
     if (!limit.success) return rateLimitResponse(limit);
-
-    const { id } = await params;
 
     const body = (await request.json().catch(() => null)) as
       | { background?: unknown }
@@ -47,15 +39,9 @@ export async function PATCH(
 
     const value = typeof raw === "string" ? raw.trim() : "";
     if (!isValidBackground(value)) {
-      return NextResponse.json(
-        { error: "Invalid background value" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Invalid background value" }, { status: 400 });
     }
 
-    // An uploaded wallpaper must live under the caller's own account
-    // folder — defence in depth against pointing a thread at another
-    // account's object path.
     const parsed = parseBackground(value);
     if (parsed.kind === "image" && !parsed.path.startsWith(`account-${ctx.accountId}/`)) {
       return NextResponse.json(
@@ -66,34 +52,20 @@ export async function PATCH(
 
     const next = value === "" ? null : value;
 
-    // Read the outgoing value first (scoped to the account) — doubles as
-    // the existence check and gives us the old token to GC if it was an
-    // uploaded image nothing else references.
-    const { data: prev, error: readErr } = await ctx.supabase
-      .from("conversations")
-      .select("background")
-      .eq("id", id)
-      .eq("account_id", ctx.accountId)
+    // Read the outgoing value first so we can GC it if it was an image.
+    const { data: before } = await ctx.supabase
+      .from("accounts")
+      .select("inbox_background")
+      .eq("id", ctx.accountId)
       .maybeSingle();
-    if (readErr) {
-      console.error("[inbox/conversation background PATCH] read error:", readErr);
-      return NextResponse.json(
-        { error: "Failed to update background" },
-        { status: 500 },
-      );
-    }
-    if (!prev) {
-      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
-    }
 
     const { error } = await ctx.supabase
-      .from("conversations")
-      .update({ background: next })
-      .eq("id", id)
-      .eq("account_id", ctx.accountId);
+      .from("accounts")
+      .update({ inbox_background: next })
+      .eq("id", ctx.accountId);
 
     if (error) {
-      console.error("[inbox/conversation background PATCH] update error:", error);
+      console.error("[inbox/background PATCH] update error:", error);
       return NextResponse.json(
         { error: "Failed to update background" },
         { status: 500 },
@@ -103,7 +75,7 @@ export async function PATCH(
     await deleteOrphanedBackgroundImage(
       ctx.supabase,
       ctx.accountId,
-      prev.background,
+      before?.inbox_background ?? null,
       next,
     );
 

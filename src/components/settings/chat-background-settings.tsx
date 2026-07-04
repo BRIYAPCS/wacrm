@@ -5,7 +5,6 @@ import { MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/hooks/use-auth";
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { ChatBackgroundPicker } from "@/components/inbox/chat-background-picker";
 import {
@@ -43,17 +42,24 @@ export function ChatBackgroundSettings() {
     }
     setSaving(true);
     try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("accounts")
-        .update({ inbox_background: token })
-        .eq("id", account.id);
-      if (error) throw error;
+      const res = await fetch("/api/inbox/background", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ background: token }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(data?.error ?? "Could not save the chat background.");
+      }
       await refreshProfile();
       toast.success("Chat background updated for your team.");
     } catch (err) {
       console.error("[chat-background] save error:", err);
-      toast.error("Could not save the chat background.");
+      toast.error(
+        err instanceof Error ? err.message : "Could not save the chat background.",
+      );
     } finally {
       setSaving(false);
     }
