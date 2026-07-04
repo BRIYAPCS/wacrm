@@ -357,7 +357,18 @@ function FlowCanvasInner() {
   const [rfNodes, setRfNodes] = useState<RfNode<NodeData>[]>(derivedRfNodes);
 
   useEffect(() => {
-    setRfNodes(derivedRfNodes);
+    // Re-syncing from the derived nodes (e.g. a validation "jump to node"
+    // flips flashKey, or the entry node changes) must not wipe React
+    // Flow's ephemeral `selected` flag that handleNodesChange set — carry
+    // it across by id so the selected card stays highlighted.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRfNodes((prev) => {
+      const selectedById = new Map(prev.map((n) => [n.id, n.selected]));
+      return derivedRfNodes.map((n) => ({
+        ...n,
+        selected: selectedById.get(n.id) ?? false,
+      }));
+    });
   }, [derivedRfNodes]);
 
   const rfEdges = useMemo(() => {

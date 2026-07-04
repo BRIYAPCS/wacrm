@@ -9,6 +9,27 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.19.8] — 2026-07-04
+
+UI polish — the remaining low-severity items from the review. No migration.
+
+### Fixed
+
+- **Contact details**: a fast contact→contact switch can no longer briefly
+  paint the previous contact's data (out-of-order fetches are now guarded),
+  and a contact deleted while its panel is open shows a clear "not
+  available" message instead of spinning forever.
+- **Contacts search** is debounced (~300ms) — typing no longer fires a
+  query per keystroke.
+- **Deal form**: editing no longer gets wiped if the currency setting
+  resolves while the sheet is open; the form only resets when it opens or
+  switches to a different deal.
+- **Retry buttons** on the Automations / Broadcasts / Notifications error
+  states now refetch in place instead of hard-reloading the whole app.
+- Small guards: the AI playground no longer updates state after you switch
+  away mid-request, and a flow "jump to node" from validation keeps the
+  selected node highlighted.
+
 ## [0.19.7] — 2026-07-04
 
 Reports → Team Performance now states its data horizon. **Migration

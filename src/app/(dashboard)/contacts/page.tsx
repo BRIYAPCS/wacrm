@@ -71,6 +71,10 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  // Debounced copy of `search` that actually drives the query — the input
+  // stays bound to `search` for instant feedback, but we only hit the DB
+  // ~300ms after the user stops typing instead of once per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
@@ -126,7 +130,7 @@ export default function ContactsPage() {
 
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
-    const term = search.trim();
+    const term = debouncedSearch.trim();
 
     let contactRows: Contact[];
     let count: number;
@@ -205,7 +209,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap]);
+  }, [supabase, page, debouncedSearch, selectedTagIds, tagsMap]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -220,6 +224,13 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
+
+  // Debounce the search box → the query only re-runs ~300ms after the last
+  // keystroke. Typing "Alice" now fires one fetch instead of five.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   function openAddForm() {
     setEditContact(null);

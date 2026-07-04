@@ -18,6 +18,12 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Guards against state updates after the panel unmounts (e.g. switching
+  // tabs mid-request). Harmless under React 19, but keeps the console clean.
+  const mountedRef = useRef(true);
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -41,6 +47,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         }),
       });
       const data = await res.json().catch(() => ({}));
+      if (!mountedRef.current) return;
       if (!res.ok) {
         if (data.code === 'ai_not_configured') {
           toast.error('No agent configured yet — finish Setup first.');
@@ -64,11 +71,12 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         },
       ]);
     } catch {
+      if (!mountedRef.current) return;
       toast.error("Couldn't reach the agent.");
       setTurns(turns);
       setInput(text);
     } finally {
-      setSending(false);
+      if (mountedRef.current) setSending(false);
     }
   };
 
