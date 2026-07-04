@@ -80,8 +80,14 @@ git clone https://github.com/<your-username>/wacrm.git
 cd wacrm
 npm install
 cp .env.local.example .env.local   # fill in Supabase + Meta creds
+npm run db:deploy                  # apply all DB migrations → your Supabase project
 npm run dev
 ```
+
+`npm run db:deploy` applies every migration in `supabase/migrations/` to
+your database in one command (idempotent, re-runnable). It needs
+`SUPABASE_DB_URL` in your env — see
+[docs/database-setup.md](./docs/database-setup.md).
 
 Open <http://localhost:3000>. You'll be redirected to `/login` (or
 `/dashboard` if already signed in).
@@ -147,6 +153,12 @@ Key pages:
 - [Deploy on Hostinger](https://wacrm.tech/docs/deployment-hostinger)
 - [Architecture](https://wacrm.tech/docs/architecture)
 - [Troubleshooting](https://wacrm.tech/docs/troubleshooting)
+
+Guides in this repo:
+- [Database setup & one-command deploy](./docs/database-setup.md)
+- [Automations, Flows & the cron scheduler](./docs/automations-and-cron.md)
+- [Email deliverability (custom SMTP)](./docs/email-setup.md)
+- [Public REST API](./docs/public-api.md)
 
 ## Stack
 
