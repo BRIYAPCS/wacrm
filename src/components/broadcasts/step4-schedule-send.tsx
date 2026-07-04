@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import type { AudienceConfig } from '@/hooks/use-broadcast-sending';
 import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,12 +16,6 @@ import {
 } from '@/components/ui/dialog';
 import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
 
-interface AudienceConfig {
-  type: string;
-  tagIds?: string[];
-  csvContacts?: { phone: string; name?: string }[];
-}
-
 interface Step4Props {
   name: string;
   onNameChange: (name: string) => void;
@@ -32,6 +26,11 @@ interface Step4Props {
   onBack: () => void;
   isProcessing: boolean;
   progress: number;
+  /**
+   * Recipient count for the review — the SAME resolver the send uses, so
+   * every audience type (incl. custom_field) shows the real number.
+   */
+  estimateAudienceCount: (audience: AudienceConfig) => Promise<number>;
 }
 
 export function Step4ScheduleSend({
@@ -44,41 +43,36 @@ export function Step4ScheduleSend({
   onBack,
   isProcessing,
   progress,
+  estimateAudienceCount,
 }: Step4Props) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
 
   useEffect(() => {
-    async function calculateReach() {
-      setLoadingReach(true);
-      try {
-        const supabase = createClient();
-
-        if (audience.type === 'all') {
-          const { count } = await supabase
-            .from('contacts')
-            .select('*', { count: 'exact', head: true });
-          setEstimatedReach(count ?? 0);
-        } else if (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) {
-          const { data: contactTags } = await supabase
-            .from('contact_tags')
-            .select('contact_id')
-            .in('tag_id', audience.tagIds);
-
-          const uniqueIds = new Set((contactTags ?? []).map((ct) => ct.contact_id));
-          setEstimatedReach(uniqueIds.size);
-        } else if (audience.type === 'csv' && audience.csvContacts) {
-          setEstimatedReach(audience.csvContacts.length);
-        } else {
-          setEstimatedReach(0);
-        }
-      } finally {
-        setLoadingReach(false);
-      }
-    }
-
-    calculateReach();
+    // Delegate to the send hook's resolver so the review count matches
+    // what's actually sent — for EVERY audience type, including
+    // custom_field (which the old inline logic dropped to 0). The
+    // `cancelled` guard prevents a slow earlier estimate from overwriting
+    // a newer one when the audience changes.
+    let cancelled = false;
+    setLoadingReach(true);
+    estimateAudienceCount(audience)
+      .then((n) => {
+        if (!cancelled) setEstimatedReach(n);
+      })
+      .catch(() => {
+        if (!cancelled) setEstimatedReach(0);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingReach(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // estimateAudienceCount is a stateless resolver; excluded from deps so
+    // the parent re-rendering (e.g. send progress) doesn't re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audience]);
 
   const audienceLabel =

@@ -23,7 +23,8 @@ const steps = [
 export default function NewBroadcastPage() {
   const router = useRouter();
   const { accountId } = useAuth();
-  const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
+  const { createAndSendBroadcast, isProcessing, progress, estimateAudienceCount } =
+    useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
@@ -224,6 +225,7 @@ export default function NewBroadcastPage() {
               onBack={() => setCurrentStep(2)}
               isProcessing={isProcessing}
               progress={progress}
+              estimateAudienceCount={estimateAudienceCount}
             />
           )}
         </div>

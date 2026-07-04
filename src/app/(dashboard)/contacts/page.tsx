@@ -260,7 +260,11 @@ export default function ContactsPage() {
       toast.error('Failed to delete contact');
     } else {
       toast.success('Contact deleted');
-      fetchContacts();
+      // If that was the only row left on this (non-first) page, the page
+      // is now empty — step back so the user doesn't land on a blank list
+      // with the pagination controls gone. setPage triggers the refetch.
+      if (contacts.length === 1 && page > 0) setPage((p) => p - 1);
+      else fetchContacts();
     }
 
     setDeleting(false);
@@ -305,7 +309,11 @@ export default function ContactsPage() {
     } else {
       toast.success(`${ids.length} contact${ids.length === 1 ? '' : 's'} deleted`);
       setSelected(new Set());
-      fetchContacts();
+      // If every row on this (non-first) page was deleted, step back a
+      // page so we don't strand the user on an empty list.
+      const remainingOnPage = contacts.filter((c) => !ids.includes(c.id)).length;
+      if (remainingOnPage === 0 && page > 0) setPage((p) => p - 1);
+      else fetchContacts();
     }
 
     setDeleting(false);

@@ -60,7 +60,7 @@ async function networkFirst(request) {
     const res = await fetch(request);
     if (res && res.ok) cache.put(request, res.clone());
     return res;
-  } catch (err) {
+  } catch {
     const cached = await cache.match(request);
     if (cached) return cached;
     // Last resort so navigations don't hard-fail offline.

@@ -168,6 +168,25 @@ export const NODE_META: Record<
   },
 };
 
+// Safe accessor for NODE_META. `node.node_type` is typed as NodeType but
+// actually comes from the DB, so a value not in the map (older/newer
+// schema, hand-edited row) would yield `undefined` and crash any card that
+// reads `meta.label`/`meta.icon`. This returns a neutral fallback instead.
+const FALLBACK_NODE_META: (typeof NODE_META)[NodeType] = {
+  label: 'Unknown step',
+  icon: Workflow,
+  color: 'text-muted-foreground',
+  blurb: 'Unrecognized node type',
+  category: 'flow',
+};
+
+export function nodeMeta(nodeType: string): (typeof NODE_META)[NodeType] {
+  return (
+    (NODE_META as Record<string, (typeof NODE_META)[NodeType]>)[nodeType] ??
+    FALLBACK_NODE_META
+  );
+}
+
 /**
  * Bucket an ordered list of node types by category, preserving both
  * the category order (NODE_CATEGORIES) and the within-category order

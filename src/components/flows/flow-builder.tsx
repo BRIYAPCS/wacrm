@@ -48,6 +48,7 @@ import { cn } from '@/lib/utils';
 import { type ValidationIssue } from '@/lib/flows/validate';
 import {
   NODE_META,
+  nodeMeta,
   NodeIconChip,
   groupNodeTypesByCategory,
   nodeColors,
@@ -390,7 +391,7 @@ function NodeCard({
   onRemove: () => void;
   onSetEntry: () => void;
 }) {
-  const meta = NODE_META[node.node_type];
+  const meta = nodeMeta(node.node_type);
   const c = nodeColors(node.node_type);
   const hasError = issues.some((i) => i.severity === 'error');
   const preview = summarizeNode(node);

@@ -327,7 +327,21 @@ export function WhatsAppConfig() {
       const res = await fetch('/api/whatsapp/config/verify-registration', {
         method: 'GET',
       });
-      const data = (await res.json()) as RegistrationProbe;
+      const data = (await res.json().catch(() => null)) as
+        | (RegistrationProbe & { error?: string; message?: string })
+        | null;
+      // Non-2xx (e.g. 401 session lapse) or a malformed body has no
+      // `checks` field — don't store it, or the render below would crash
+      // on Object.entries(undefined). Surface a toast and bail.
+      if (!res.ok || !data || typeof data.checks !== 'object') {
+        setRegistrationProbe(null);
+        toast.error(
+          data?.message ||
+            data?.error ||
+            'Could not verify right now. Please try again — if it persists, re-log in.',
+        );
+        return;
+      }
       setRegistrationProbe(data);
       if (data.live) {
         toast.success('Number is fully wired — Meta is delivering events.');
@@ -553,7 +567,7 @@ export function WhatsAppConfig() {
                   </span>
                 </p>
                 <ul className="space-y-0.5 text-muted-foreground">
-                  {Object.entries(registrationProbe.checks).map(([k, v]) => (
+                  {Object.entries(registrationProbe.checks ?? {}).map(([k, v]) => (
                     <li key={k} className="flex items-center gap-1.5">
                       {v === true ? (
                         <CheckCircle2 className="size-3 text-emerald-400 shrink-0" />
