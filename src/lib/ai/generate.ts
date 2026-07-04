@@ -1,7 +1,8 @@
 import { AiError, type AiConfig, type ChatMessage, type GenerateResult } from './types'
 import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
-import { generateOpenAi } from './providers/openai'
+import { generateOpenAiCompatible } from './providers/openai-compatible'
 import { generateAnthropic } from './providers/anthropic'
+import { AI_PROVIDERS, resolveChatEndpoint } from './providers/registry'
 
 export interface GenerateArgs {
   config: AiConfig
@@ -32,17 +33,32 @@ export async function generateRaw(args: GenerateArgs): Promise<string> {
     timeoutMs,
   }
 
-  switch (config.provider) {
-    case 'openai':
-      return generateOpenAi(providerArgs)
-    case 'anthropic':
-      return generateAnthropic(providerArgs)
-    default:
-      throw new AiError(`Unsupported AI provider: ${config.provider}`, {
-        code: 'unsupported_provider',
-        status: 400,
-      })
+  const meta = AI_PROVIDERS[config.provider]
+  if (!meta) {
+    throw new AiError(`Unsupported AI provider: ${config.provider}`, {
+      code: 'unsupported_provider',
+      status: 400,
+    })
   }
+
+  // Anthropic has its own request shape; everything else speaks the OpenAI
+  // Chat Completions API via the shared compatible adapter, differing only
+  // in endpoint URL + auth style (resolved from the registry + base URL).
+  if (meta.family === 'anthropic') {
+    return generateAnthropic(providerArgs)
+  }
+
+  const { url, authStyle, maxTokensParam } = resolveChatEndpoint(
+    config.provider,
+    config.baseUrl,
+  )
+  return generateOpenAiCompatible({
+    ...providerArgs,
+    url,
+    authStyle: authStyle === 'anthropic' ? 'bearer' : authStyle,
+    maxTokensParam,
+    providerLabel: meta.label,
+  })
 }
 
 export async function generateReply(args: GenerateArgs): Promise<GenerateResult> {

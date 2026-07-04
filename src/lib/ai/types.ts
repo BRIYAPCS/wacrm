@@ -6,7 +6,24 @@
 // whether the account is on OpenAI or Anthropic.
 // ============================================================
 
-export type AiProvider = 'openai' | 'anthropic'
+// Supported AI providers. Two request "families" under the hood (see
+// providers/registry.ts): the Anthropic Messages API, and the OpenAI Chat
+// Completions API — which almost every provider AND every self-hosted
+// server (Ollama, LM Studio, LocalAI, vLLM…) speaks, so `openai_compatible`
+// + a base URL covers "any provider".
+export type AiProvider =
+  | 'openai'
+  | 'anthropic'
+  | 'gemini'
+  | 'azure'
+  | 'openrouter'
+  | 'groq'
+  | 'deepseek'
+  | 'mistral'
+  | 'together'
+  | 'xai'
+  | 'glm'
+  | 'openai_compatible'
 
 /**
  * Account AI setup, decrypted and ready to use. Produced by
@@ -17,6 +34,10 @@ export interface AiConfig {
   provider: AiProvider
   model: string
   apiKey: string
+  /** Custom endpoint base URL — required for `azure` and
+   *  `openai_compatible` (self-hosted/local); an optional proxy override
+   *  for the hosted providers. Null when the provider's default is used. */
+  baseUrl: string | null
   systemPrompt: string | null
   isActive: boolean
   autoReplyEnabled: boolean

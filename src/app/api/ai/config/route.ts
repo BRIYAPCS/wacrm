@@ -8,7 +8,8 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
-import { AiError, type AiProvider } from '@/lib/ai/types'
+import { AiError } from '@/lib/ai/types'
+import { isAiProvider, providerMeta } from '@/lib/ai/providers/registry'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -30,7 +31,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, api_key, embeddings_api_key',
+        'provider, model, base_url, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, api_key, embeddings_api_key',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -77,12 +78,31 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object') return bad('Invalid request body')
 
-    const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
-      return bad('provider must be "openai" or "anthropic"')
+    const provider = body.provider
+    if (!isAiProvider(provider)) {
+      return bad('Unknown AI provider')
     }
+    const meta = providerMeta(provider)
     const model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) return bad('model is required')
+
+    // Base URL — required for Azure + custom/self-hosted, an optional
+    // override otherwise. Store null (which also clears it when switching
+    // back to a hosted provider).
+    let baseUrl: string | null = null
+    if (typeof body.base_url === 'string' && body.base_url.trim()) {
+      const bu = body.base_url.trim()
+      try {
+        new URL(bu)
+      } catch {
+        return bad('Endpoint URL must be a valid URL (incl. http:// or https://).')
+      }
+      baseUrl = bu
+    }
+    if (meta.requiresBaseUrl && !baseUrl) {
+      return bad(`${meta.label} needs an endpoint URL.`)
+    }
+    let saveWarning: string | null = null
 
     const systemPrompt =
       typeof body.system_prompt === 'string' && body.system_prompt.trim()
@@ -109,7 +129,7 @@ export async function POST(request: Request) {
     // Reuse the stored key when the form didn't send a fresh one.
     const { data: existing } = await supabase
       .from('ai_configs')
-      .select('id, provider, model, api_key')
+      .select('id, provider, model, api_key, base_url')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -122,6 +142,9 @@ export async function POST(request: Request) {
       } catch {
         return bad('Stored API key could not be decrypted — re-enter your key.')
       }
+    } else if (meta.keyOptional) {
+      // Keyless local server (Ollama / LM Studio / …) — no key needed.
+      apiKeyPlain = ''
     } else {
       return bad('api_key is required')
     }
@@ -134,7 +157,8 @@ export async function POST(request: Request) {
       !existing ||
       rawKey !== '' ||
       provider !== existing.provider ||
-      model !== existing.model
+      model !== existing.model ||
+      baseUrl !== (existing.base_url ?? null)
 
     if (credentialsChanged) {
       try {
@@ -142,6 +166,7 @@ export async function POST(request: Request) {
           provider,
           model,
           apiKey: apiKeyPlain,
+          baseUrl,
           systemPrompt,
           isActive,
           autoReplyEnabled,
@@ -149,14 +174,24 @@ export async function POST(request: Request) {
           embeddingsApiKey: null,
         })
       } catch (err) {
-        if (err instanceof AiError) {
+        // Custom / self-hosted endpoints may not be reachable from the
+        // server at save time (a localhost URL, a cold container). Don't
+        // block the save — warn and let them fix it — but keep hosted
+        // providers strict so a bad key is caught immediately.
+        if (meta.requiresBaseUrl) {
+          saveWarning =
+            err instanceof AiError
+              ? err.message
+              : 'Saved, but the endpoint could not be reached to verify it.'
+        } else if (err instanceof AiError) {
           return NextResponse.json(
             { error: err.message, code: err.code },
             { status: 400 },
           )
+        } else {
+          console.error('[ai/config POST] validation error:', err)
+          return bad('Could not validate the API key with the provider.')
         }
-        console.error('[ai/config POST] validation error:', err)
-        return bad('Could not validate the API key with the provider.')
       }
     }
 
@@ -177,10 +212,18 @@ export async function POST(request: Request) {
       }
     }
 
-    const encryptedKey = rawKey ? encrypt(rawKey) : null
+    // Encrypt the fresh key; for a keyless local server with no existing
+    // key, persist an encrypted empty string so the NOT NULL column holds
+    // and loadAiConfig treats it as configured (the adapter then sends no
+    // auth header).
+    let encryptedKey: string | null = null
+    if (rawKey) encryptedKey = encrypt(rawKey)
+    else if (!existing?.api_key && meta.keyOptional) encryptedKey = encrypt('')
+
     const shared: Record<string, unknown> = {
       provider,
       model,
+      base_url: baseUrl,
       system_prompt: systemPrompt,
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
@@ -220,7 +263,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, warning: saveWarning })
   } catch (err) {
     return toErrorResponse(err)
   }
