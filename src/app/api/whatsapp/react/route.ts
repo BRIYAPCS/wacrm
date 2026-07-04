@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { canSendMessages, type AccountRole } from '@/lib/auth/roles';
 import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
@@ -41,13 +42,22 @@ export async function POST(request: Request) {
     // lookups work for teammates who didn't author the rows directly.
     const { data: profile } = await supabase
       .from('profiles')
-      .select('account_id')
+      .select('account_id, account_role')
       .eq('user_id', user.id)
       .maybeSingle();
     const accountId = profile?.account_id as string | undefined;
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      );
+    }
+    // Read-only roles (viewer) must not trigger outbound Meta calls — the
+    // send happens before any RLS-checked write, so RLS alone wouldn't
+    // stop a viewer from reacting. Enforce agent+ here.
+    if (!profile?.account_role || !canSendMessages(profile.account_role as AccountRole)) {
+      return NextResponse.json(
+        { error: 'Your role does not permit sending.' },
         { status: 403 },
       );
     }

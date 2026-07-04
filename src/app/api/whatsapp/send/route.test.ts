@@ -18,6 +18,8 @@ let contactRow: Record<string, unknown> | null = null
 // the shared send core re-loads the conversation (with its contact) from
 // just the id, so the mock must model insert-then-select-by-id.
 let createdConversation: Record<string, unknown> | null = null
+// The caller's role, so we can assert the agent+ send gate.
+let profileRole = 'agent'
 
 const CONTACT = {
   id: 'contact-1',
@@ -35,7 +37,7 @@ function makeSupabaseMock() {
     const selectResult = () => {
       switch (table) {
         case 'profiles':
-          return { data: { account_id: 'acct-1' }, error: null }
+          return { data: { account_id: 'acct-1', account_role: profileRole }, error: null }
         case 'contacts':
           return { data: contactRow, error: null }
         case 'conversations':
@@ -179,12 +181,21 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     existingConversation = null
     createdConversation = null
     contactRow = CONTACT
+    profileRole = 'agent'
     supabaseMock = makeSupabaseMock()
     sendTemplateMessage.mockClear()
   })
 
   afterEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('rejects a read-only viewer with 403 and never sends to Meta', async () => {
+    profileRole = 'viewer'
+    const res = await postContactTemplate()
+    expect(res.status).toBe(403)
+    expect(sendTemplateMessage).not.toHaveBeenCalled()
+    expect(messageInserts).toHaveLength(0)
   })
 
   it('creates a conversation for a contact with none, then sends the template', async () => {

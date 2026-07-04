@@ -552,8 +552,14 @@ async function advanceFromNodeKey(
   nodes: Map<string, FlowNodeRow>,
 ): Promise<{ outcome: "advanced" | "completed" | "handed_off" }> {
   let currentKey: string | null = startNodeKey;
-  // Defensive cap — if a flow has a cycle (which the validator
-  // SHOULD catch but doesn't yet in v1), we bail rather than loop.
+  // Two independent safety caps for a cyclic graph the v1 validator
+  // doesn't yet reject:
+  //   - `safety` bounds total node visits (walk the loop and bail).
+  //   - `sends` bounds OUTBOUND messages per dispatch, much lower, so a
+  //     cycle of send nodes can't blast dozens of WhatsApp messages at the
+  //     customer (spam + Meta quality hit) before the visit cap trips.
+  let sends = 0;
+  const MAX_SENDS_PER_DISPATCH = 10;
   for (let safety = 0; safety < 64; safety += 1) {
     if (!currentKey) {
       await logEvent(db, run.id, "error", null, {
@@ -579,6 +585,15 @@ async function advanceFromNodeKey(
       continue;
     }
     if (node.node_type === "send_message") {
+      if (sends >= MAX_SENDS_PER_DISPATCH) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "send_cap_exceeded",
+          sends,
+        });
+        await endRun(db, run.id, "failed", "send_cap_exceeded");
+        return { outcome: "completed" };
+      }
+      sends += 1;
       const cfg = node.config as unknown as SendMessageNodeConfig;
       try {
         const { whatsapp_message_id } = await engineSendText({
@@ -604,6 +619,15 @@ async function advanceFromNodeKey(
       continue;
     }
     if (node.node_type === "send_media") {
+      if (sends >= MAX_SENDS_PER_DISPATCH) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "send_cap_exceeded",
+          sends,
+        });
+        await endRun(db, run.id, "failed", "send_cap_exceeded");
+        return { outcome: "completed" };
+      }
+      sends += 1;
       const cfg = node.config as unknown as SendMediaNodeConfig;
       try {
         const { whatsapp_message_id } = await engineSendMedia({

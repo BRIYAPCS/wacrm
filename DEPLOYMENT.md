@@ -121,15 +121,16 @@ npm run db:deploy
 ```
 
 This applies every migration in `supabase/migrations/` in order — all
-tables, RLS policies, the `avatars` / `chat-media` / `flow-media` storage
-buckets, functions, triggers, and the realtime publication:
+tables, RLS policies, the `avatars` / `chat-media` / `flow-media` /
+`chat-backgrounds` storage buckets, functions, triggers, and the realtime
+publication:
 
 ```
 → Connecting to database…
   ▶  001_initial_schema.sql … done
   …
-  ▶  045_invite_only.sql … done
-✓ Database up to date — 45 migration(s) applied, 0 already present.
+  ▶  049_security_hardening.sql … done
+✓ Database up to date — 49 migration(s) applied, 0 already present.
 ```
 
 It's **idempotent and safe to re-run** — applied versions are recorded in
