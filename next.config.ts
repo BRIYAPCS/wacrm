@@ -53,6 +53,11 @@ const SECURITY_HEADERS = [
       // Supabase REST + realtime (WSS). All Meta API calls happen
       // server-side, so graph.facebook.com does not belong here.
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      // PWA: the service worker (public/sw.js) and web manifest are
+      // same-origin. Declared explicitly so they keep working if this CSP
+      // is ever flipped from Report-Only to enforcing.
+      "worker-src 'self'",
+      "manifest-src 'self'",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

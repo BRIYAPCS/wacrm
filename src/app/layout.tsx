@@ -4,6 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ThemedToaster } from "@/components/themed-toaster";
+import { ServiceWorkerRegistrar } from "@/components/pwa/service-worker-registrar";
 import {
   DEFAULT_MODE,
   DEFAULT_THEME,
@@ -24,12 +25,21 @@ export const metadata: Metadata = {
     template: "%s — wacrm",
   },
   description: "Self-hostable CRM template for WhatsApp.",
+  applicationName: "wacrm",
   robots: {
     index: false,
     follow: false,
   },
   icons: {
     icon: [{ url: "/icon" }],
+  },
+  // iOS standalone (add-to-home-screen) chrome. The web manifest
+  // (src/app/manifest.ts) covers Android/desktop install; this covers
+  // Apple's older apple-mobile-web-app-* meta tags.
+  appleWebApp: {
+    capable: true,
+    title: "wacrm",
+    statusBarStyle: "black-translucent",
   },
   formatDetection: {
     email: false,
@@ -107,6 +117,7 @@ export default function RootLayout({
           {children}
           <ThemedToaster />
         </ThemeProvider>
+        <ServiceWorkerRegistrar />
       </body>
     </html>
   );
