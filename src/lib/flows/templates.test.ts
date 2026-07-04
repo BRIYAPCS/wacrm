@@ -32,7 +32,7 @@ describe("flow templates", () => {
         {
           name: template.name,
           trigger_type: template.trigger_type,
-          trigger_config: template.trigger_config,
+          trigger_config: template.trigger_config as Record<string, unknown>,
           entry_node_id: template.entry_node_id,
         },
         template.nodes.map((n) => ({

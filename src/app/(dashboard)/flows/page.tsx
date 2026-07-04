@@ -267,7 +267,7 @@ export default function FlowsPage() {
             `sm:max-w-sm` baked into its default classes. Without the
             sm: prefix our override applies at base only and the
             sm-scoped 384px wins at every real desktop breakpoint. */}
-        <DialogContent className="sm:max-w-4xl bg-popover text-popover-foreground">
+        <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-4xl bg-popover text-popover-foreground">
           <DialogHeader>
             <DialogTitle>Create a new flow</DialogTitle>
             <DialogDescription className="text-muted-foreground">
@@ -275,6 +275,11 @@ export default function FlowsPage() {
             </DialogDescription>
           </DialogHeader>
 
+          {/* Scrollable body — the template gallery can be taller than the
+              viewport, so scroll it here while the header (close X) and
+              footer (Create / Cancel) stay pinned. min-h-0 lets this flex
+              child shrink below its content so overflow actually engages. */}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
           {templates.length > 0 && (
             <div className="space-y-3">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -321,6 +326,7 @@ export default function FlowsPage() {
                 if (e.key === "Enter") handleCreate();
               }}
             />
+          </div>
           </div>
 
           <DialogFooter>
