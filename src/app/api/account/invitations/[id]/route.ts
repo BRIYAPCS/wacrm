@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { recordAudit } from "@/lib/audit/record";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -37,6 +38,14 @@ export async function DELETE(
     if (!limit.success) return rateLimitResponse(limit);
 
     const { id } = await params;
+
+    // Fetch the pending auth user tied to this invite (if any) before we
+    // delete the row. RLS scopes this read to the caller's account.
+    const { data: inv } = await ctx.supabase
+      .from("account_invitations")
+      .select("invited_user_id, accepted_at")
+      .eq("id", id)
+      .maybeSingle();
 
     // No `eq('account_id', ctx.accountId)` — the RLS policy
     // (`is_account_member(account_id, 'admin')`) already scopes
@@ -65,6 +74,20 @@ export async function DELETE(
         { error: "Invitation not found" },
         { status: 404 },
       );
+    }
+
+    // Cancel the pending Supabase auth user so the emailed link can no
+    // longer be accepted and the address can be re-invited later. Only for
+    // un-accepted invites — an accepted one belongs to a real member.
+    if (inv?.invited_user_id && !inv.accepted_at) {
+      await supabaseAdmin()
+        .auth.admin.deleteUser(inv.invited_user_id)
+        .catch((e) =>
+          console.warn(
+            "[revoke] deleteUser failed:",
+            e instanceof Error ? e.message : e,
+          ),
+        );
     }
 
     recordAudit({

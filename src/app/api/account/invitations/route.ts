@@ -20,12 +20,8 @@
 import { NextResponse } from "next/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
-import {
-  clampExpiryDays,
-  generateInviteToken,
-  inviteExpiresAt,
-  inviteUrl,
-} from "@/lib/auth/invitations";
+import { clampExpiryDays, inviteExpiresAt } from "@/lib/auth/invitations";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isAccountRole } from "@/lib/auth/roles";
 import { recordAudit } from "@/lib/audit/record";
 import {
@@ -136,6 +132,9 @@ function getBaseUrl(request: Request): string {
 }
 
 const MAX_LABEL_LEN = 80;
+// Pragmatic email check — Supabase re-validates on send; this just fails
+// obviously-bad input fast with a clear message.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function GET() {
   try {
@@ -144,7 +143,7 @@ export async function GET() {
     const { data, error } = await ctx.supabase
       .from("account_invitations")
       .select(
-        "id, role, label, created_by_user_id, created_at, expires_at, accepted_at, accepted_by_user_id",
+        "id, email, role, label, created_by_user_id, created_at, expires_at, accepted_at, accepted_by_user_id",
       )
       .eq("account_id", ctx.accountId)
       .is("accepted_at", null)
@@ -180,60 +179,130 @@ export async function POST(request: Request) {
     if (!limit.success) return rateLimitResponse(limit);
 
     const body = (await request.json().catch(() => null)) as
-      | { role?: unknown; expiresInDays?: unknown; label?: unknown }
+      | { email?: unknown; role?: unknown; name?: unknown; expiresInDays?: unknown }
       | null;
 
     const role = body?.role;
     if (!isAccountRole(role) || role === "owner") {
-      // The DB CHECK already rejects 'owner', but failing fast
-      // here gives a clearer 400 than the eventual constraint
-      // violation surfaced as a 500.
       return NextResponse.json(
         { error: "'role' must be one of admin, agent, viewer" },
         { status: 400 },
       );
     }
 
+    // Email is required and pinned — only this address can accept.
+    const rawEmail = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (!EMAIL_RE.test(rawEmail)) {
+      return NextResponse.json(
+        { error: "A valid email address is required" },
+        { status: 400 },
+      );
+    }
+    const email = rawEmail;
+
+    let name: string | null = null;
+    if (typeof body?.name === "string") {
+      const trimmed = body.name.trim();
+      if (trimmed.length > MAX_LABEL_LEN) {
+        return NextResponse.json(
+          { error: `Name must be ${MAX_LABEL_LEN} characters or fewer` },
+          { status: 400 },
+        );
+      }
+      name = trimmed === "" ? null : trimmed;
+    }
+
     const expiresInDaysRaw = body?.expiresInDays;
-    // `clampExpiryDays` tolerates undefined / NaN / negatives by
-    // collapsing to the safe default, so we just pass the raw
-    // value through after a type narrow.
     const expiresInDays =
       typeof expiresInDaysRaw === "number" ? expiresInDaysRaw : undefined;
     const expiryDays = clampExpiryDays(expiresInDays);
     const expiresAt = inviteExpiresAt(expiryDays);
 
-    let label: string | null = null;
-    if (typeof body?.label === "string") {
-      const trimmed = body.label.trim();
-      if (trimmed.length > MAX_LABEL_LEN) {
-        return NextResponse.json(
-          { error: `Label must be ${MAX_LABEL_LEN} characters or fewer` },
-          { status: 400 },
-        );
-      }
-      label = trimmed === "" ? null : trimmed;
+    // Already a member of THIS account? (RLS-scoped read.)
+    const { data: existingMember } = await ctx.supabase
+      .from("profiles")
+      .select("user_id")
+      .eq("account_id", ctx.accountId)
+      .ilike("email", email)
+      .maybeSingle();
+    if (existingMember) {
+      return NextResponse.json(
+        { error: "That email is already a member of this account." },
+        { status: 409 },
+      );
     }
 
-    const { token, hash } = generateInviteToken();
+    // A pending (un-accepted, non-expired) invite for this email already?
+    const { data: pending } = await ctx.supabase
+      .from("account_invitations")
+      .select("id")
+      .eq("account_id", ctx.accountId)
+      .ilike("email", email)
+      .is("accepted_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+    if (pending) {
+      return NextResponse.json(
+        { error: "An invitation is already pending for that email. Revoke it first to re-send." },
+        { status: 409 },
+      );
+    }
 
-    const { data, error } = await ctx.supabase
+    // Send the Supabase native invite email. The account + role travel in
+    // user_metadata; handle_new_user (migration 044) reads them to attach
+    // the new user to this account with this role. The email links to
+    // /accept-invite where they set a password.
+    const admin = supabaseAdmin();
+    const { data: invited, error: inviteErr } =
+      await admin.auth.admin.inviteUserByEmail(email, {
+        data: {
+          invited_account_id: ctx.accountId,
+          invited_account_role: role,
+          invited_by: ctx.userId,
+          full_name: name ?? "",
+        },
+        redirectTo: `${getBaseUrl(request)}/accept-invite`,
+      });
+
+    if (inviteErr || !invited?.user) {
+      const msg = inviteErr?.message ?? "Failed to send invitation";
+      // The most common cause: the email already has an auth account on
+      // this instance (signed up or invited before).
+      const alreadyExists = /already|registered|exists/i.test(msg);
+      console.error("[POST /api/account/invitations] inviteUserByEmail:", msg);
+      return NextResponse.json(
+        {
+          error: alreadyExists
+            ? "That email already has an account on this instance."
+            : `Couldn't send the invitation: ${msg}`,
+        },
+        { status: alreadyExists ? 409 : 502 },
+      );
+    }
+
+    // Record the pending invite (for the Members list + revoke). token_hash
+    // is null — email invites use Supabase's own link, not our token.
+    const { data: row, error: insertErr } = await ctx.supabase
       .from("account_invitations")
       .insert({
         account_id: ctx.accountId,
-        token_hash: hash,
+        email,
+        invited_user_id: invited.user.id,
         role,
         created_by_user_id: ctx.userId,
-        label,
+        label: name,
         expires_at: expiresAt.toISOString(),
       })
-      .select("id, role, label, expires_at, created_at")
+      .select("id, email, role, label, expires_at, created_at")
       .single();
 
-    if (error || !data) {
-      console.error("[POST /api/account/invitations] insert error:", error);
+    if (insertErr || !row) {
+      // The email went out but we couldn't record it — roll back the
+      // pending auth user so a re-invite isn't blocked by "already exists".
+      console.error("[POST /api/account/invitations] insert error:", insertErr);
+      await admin.auth.admin.deleteUser(invited.user.id).catch(() => {});
       return NextResponse.json(
-        { error: "Failed to create invitation" },
+        { error: "Failed to record the invitation" },
         { status: 500 },
       );
     }
@@ -243,18 +312,12 @@ export async function POST(request: Request) {
       actorUserId: ctx.userId,
       action: "invitation.created",
       entityType: "invitation",
-      entityId: data.id,
-      metadata: { role, label },
+      entityId: row.id,
+      metadata: { role, email },
     });
 
     return NextResponse.json(
-      {
-        invitation: data,
-        // Plaintext payload — visible to the admin exactly once.
-        token,
-        url: inviteUrl(token, getBaseUrl(request)),
-        expiresInDays: expiryDays,
-      },
+      { invitation: row, email, expiresInDays: expiryDays },
       { status: 201 },
     );
   } catch (err) {

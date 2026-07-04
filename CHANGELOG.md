@@ -9,6 +9,34 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.20.0] — 2026-07-04
+
+Adds **invite teammates by email** (Stage A of invite-only onboarding).
+
+**Migration required:** apply `supabase/migrations/044_invite_by_email.sql`.
+**Setup required:** configure **SMTP in your Supabase project** (Auth →
+SMTP) so the invite emails actually deliver — Supabase's built-in mailer is
+heavily rate-limited and not for production.
+
+### Added
+
+- **Email invitations.** In Settings → Team members, an admin enters an
+  email + role and we send that address a secure Supabase invite link. The
+  invitee sets a password on a new **/accept-invite** page and lands
+  attached to your account with the assigned role — no link to copy/paste.
+- **Email-pinned.** The invite is tied to that exact address (only they can
+  accept), and can't create an `owner`. Revoking an invite also cancels the
+  pending sign-in so the address can be re-invited.
+- The pending-invitations list now shows the invited email.
+
+### Notes
+
+- This is **Stage A** — it does not yet disable public sign-up; anyone can
+  still register their own account. Locking the instance to invite-only
+  (Stage B) is a separate, deliberate change.
+- `handle_new_user` now attaches invited users to the inviting account
+  instead of giving them a personal one; uninvited sign-up is unchanged.
+
 ## [0.19.8] — 2026-07-04
 
 UI polish — the remaining low-severity items from the review. No migration.
