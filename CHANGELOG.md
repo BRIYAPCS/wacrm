@@ -9,6 +9,32 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.10.0] — 2026-07-04
+
+Adds **scheduled messages (send-later)** — compose a message now and have
+it delivered automatically at a future time.
+
+### Added
+
+- **Scheduled messages.** In the inbox composer, tap the calendar-clock
+  button to schedule the typed message for later; upcoming sends appear
+  in a strip above the composer and can be canceled (agent+). Delivered
+  by the cron drain `GET /api/scheduled-messages/cron` (claimed with a
+  `pending → sending` transition so overlapping ticks can't double-send),
+  reusing the shared send core. v1 is text-only. Backed by
+  `/api/scheduled-messages`.
+  **Migration required:** `supabase/migrations/033_scheduled_messages.sql`
+  adds the `scheduled_messages` table + RLS (member read / agent+ write).
+  Idempotent — apply with `npm run db:deploy`.
+
+### Changed
+
+- The cron pinger now drives **three** endpoints (automations, flows, and
+  scheduled messages). The committed GitHub Actions workflow and
+  `scripts/cron-ping.sh` already include the new one; if you run your own
+  scheduler, add `/api/scheduled-messages/cron` — see
+  [docs/automations-and-cron.md](./docs/automations-and-cron.md).
+
 ## [0.9.0] — 2026-07-04
 
 Adds **saved replies (canned responses)** — reusable message snippets

@@ -39,4 +39,5 @@ echo "cron-ping $(date -u +%FT%TZ)"
 ok=0
 ping "/api/automations/cron" || ok=1
 ping "/api/flows/cron" || ok=1
+ping "/api/scheduled-messages/cron" || ok=1
 exit "$ok"

@@ -48,7 +48,7 @@ jobs:
             exit 1
           fi
           fail=0
-          for path in /api/automations/cron /api/flows/cron; do
+          for path in /api/automations/cron /api/flows/cron /api/scheduled-messages/cron; do
             code=$(curl -sS -o /tmp/cron_body -w '%{http_code}' \
               -H "x-cron-secret: $CRON_SECRET" "${BASE_URL}${path}" || echo 000)
             echo "${path} -> ${code} $(cat /tmp/cron_body 2>/dev/null)"
