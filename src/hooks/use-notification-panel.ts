@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Notification } from "@/types";
 
@@ -43,8 +43,13 @@ export function useNotificationPanel(open: boolean, changeSignal: number) {
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
+  // Monotonic request id so an earlier fetch that resolves late can't
+  // clobber a newer one's results (rapid changeSignal bumps overlap loads).
+  const reqSeq = useRef(0);
+
   const load = useCallback(async () => {
     const supabase = createClient();
+    const seq = ++reqSeq.current;
     setLoading(true);
     try {
       const [conv, notif] = await Promise.all([
@@ -62,6 +67,9 @@ export function useNotificationPanel(open: boolean, changeSignal: number) {
           .order("created_at", { ascending: false })
           .limit(LIMIT),
       ]);
+
+      // A newer load started while we were awaiting — drop these results.
+      if (seq !== reqSeq.current) return;
 
       if (!conv.error && conv.data) {
         setMessages(
@@ -81,8 +89,11 @@ export function useNotificationPanel(open: boolean, changeSignal: number) {
         setAlerts(notif.data as Notification[]);
       }
     } finally {
-      setLoading(false);
-      setLoaded(true);
+      // Only the latest request owns the loading/loaded flags.
+      if (seq === reqSeq.current) {
+        setLoading(false);
+        setLoaded(true);
+      }
     }
   }, []);
 

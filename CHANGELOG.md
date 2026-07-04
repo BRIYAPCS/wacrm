@@ -9,6 +9,33 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.25.2] — 2026-07-04
+
+Hardening + responsiveness pass from a full-app review. No migration.
+
+### Security
+
+- **Knowledge-base URL fetch is now SSRF-safe across redirects.** The
+  fetch validated the original host but followed redirects blindly, so a
+  public URL could 302-bounce to an internal / cloud-metadata address. It
+  now follows redirects manually and re-validates every hop (bounded), and
+  streams the body under a hard 10 MB cap instead of buffering it all
+  first (bounds a memory-exhaustion vector on responses with no/wrong
+  `content-length`).
+
+### Fixed
+
+- **Mobile inbox**: the shell now uses dynamic viewport height (`dvh`), so
+  the message composer no longer hides behind the mobile browser toolbar.
+- **Conversation header** wraps instead of clipping its action buttons on
+  very narrow phones (the wallpaper button had tightened the row).
+- **Chat-background dialog** keeps its side margins on phones and widens
+  properly on desktop (was edge-to-edge on mobile / cramped on desktop).
+- **Pipelines** loading skeleton scrolls horizontally instead of pushing
+  the page sideways on mobile.
+- **Notification bell**: guards against out-of-order refetches so a slow
+  request can't overwrite fresher data in the dropdown.
+
 ## [0.25.1] — 2026-07-04
 
 ### Fixed

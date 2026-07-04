@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest'
-import { htmlToText, extractFromFile, ExtractError, MAX_SOURCE_BYTES } from './extract'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import {
+  htmlToText,
+  extractFromFile,
+  extractFromUrl,
+  ExtractError,
+  MAX_SOURCE_BYTES,
+} from './extract'
+import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+
+vi.mock('@/lib/webhooks/ssrf', () => ({ isDeliverableUrl: vi.fn() }))
+const mockDeliverable = vi.mocked(isDeliverableUrl)
 
 describe('htmlToText', () => {
   it('extracts the title and readable text, dropping scripts/styles', () => {
@@ -75,5 +85,89 @@ describe('extractFromFile', () => {
   it('rejects an oversize file', async () => {
     const big = { buffer: Buffer.alloc(MAX_SOURCE_BYTES + 1), filename: 'b.txt', mimeType: 'text/plain' }
     await expect(extractFromFile(big)).rejects.toThrow(/10 MB/)
+  })
+})
+
+describe('extractFromUrl — SSRF + size safety', () => {
+  const realFetch = global.fetch
+  beforeEach(() => {
+    mockDeliverable.mockReset()
+  })
+  afterEach(() => {
+    global.fetch = realFetch
+  })
+
+  it('re-validates redirect targets and refuses an internal bounce', async () => {
+    // Original host is public; the redirect target (metadata IP) is not.
+    mockDeliverable.mockImplementation(
+      async (u: string) => new URL(u).hostname === 'good.com',
+    )
+    global.fetch = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'http://169.254.169.254/latest/meta-data/' },
+        }),
+    ) as unknown as typeof fetch
+
+    await expect(extractFromUrl('https://good.com/x')).rejects.toThrow(
+      /private or unreachable/,
+    )
+    // The redirect target must have been re-checked (not just the original).
+    expect(mockDeliverable).toHaveBeenCalledWith(
+      expect.stringContaining('169.254.169.254'),
+    )
+  })
+
+  it('follows a redirect to an allowed host and reports the final URL', async () => {
+    mockDeliverable.mockResolvedValue(true)
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 301,
+          headers: { location: 'https://good.com/final' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response('<title>Hi</title><p>Body text</p>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+      ) as unknown as typeof fetch
+
+    const r = await extractFromUrl('https://good.com/start')
+    expect(r.text).toContain('Body text')
+    expect(r.url).toBe('https://good.com/final')
+  })
+
+  it('aborts an oversize streamed body with no content-length', async () => {
+    mockDeliverable.mockResolvedValue(true)
+    const oversize = new Uint8Array(MAX_SOURCE_BYTES + 1024)
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(oversize)
+        c.close()
+      },
+    })
+    global.fetch = vi.fn(
+      async () =>
+        new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+    ) as unknown as typeof fetch
+
+    await expect(extractFromUrl('https://good.com/big')).rejects.toThrow(/10 MB/)
+  })
+
+  it('refuses a URL whose own host is private before fetching', async () => {
+    mockDeliverable.mockResolvedValue(false)
+    const spy = vi.fn()
+    global.fetch = spy as unknown as typeof fetch
+    await expect(extractFromUrl('http://127.0.0.1/x')).rejects.toThrow(
+      /private or unreachable/,
+    )
+    expect(spy).not.toHaveBeenCalled()
   })
 })
