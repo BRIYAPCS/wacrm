@@ -1,0 +1,59 @@
+name: Scheduled cron
+
+# Drives wacrm's maintenance endpoints on a schedule:
+#   /api/automations/cron  — resume due automation "Wait" steps
+#   /api/flows/cron         — sweep stale / abandoned flow runs
+#
+# This is the host-agnostic scheduler: it runs in GitHub's cloud, so it
+# works no matter where the app is deployed (Hostinger, Vercel, Railway,
+# a VPS). Alternatives (Vercel Cron, a server crontab) are in
+# docs/automations-and-cron.md — pick ONE to avoid double-firing.
+#
+# One-time setup, AFTER you deploy (repo → Settings → Secrets and
+# variables → Actions):
+#   • Variable  BASE_URL     = https://your-domain.com   (no trailing slash)
+#   • Secret    CRON_SECRET  = the same value as the app's AUTOMATION_CRON_SECRET
+#
+# Until BASE_URL is set the job no-ops, so it never fails red before the
+# app is live. Scheduled workflows only run from the default branch (main)
+# and GitHub may delay them under load — fine for Wait steps (minutes) and
+# the 24h flow-timeout default.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *" # every 5 minutes
+  workflow_dispatch: {} # manual "Run workflow" button for testing
+
+# Never let a slow run pile up behind the next tick.
+concurrency:
+  group: wacrm-cron
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: Ping maintenance endpoints
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping
+        env:
+          BASE_URL: ${{ vars.BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "BASE_URL not configured yet — skipping (set it after deploying)."
+            exit 0
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET secret is not set."
+            exit 1
+          fi
+          fail=0
+          for path in /api/automations/cron /api/flows/cron; do
+            code=$(curl -sS -o /tmp/cron_body -w '%{http_code}' \
+              -H "x-cron-secret: $CRON_SECRET" "${BASE_URL}${path}" || echo 000)
+            echo "${path} -> ${code} $(cat /tmp/cron_body 2>/dev/null)"
+            # 200 = worked. 401 = secret mismatch. 503 = secret not set on
+            # the server. Anything but 200 fails the job so you get notified.
+            [ "$code" = "200" ] || fail=1
+          done
+          exit $fail
