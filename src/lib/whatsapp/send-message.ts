@@ -83,6 +83,13 @@ export interface SendMessageParams {
    * per-agent activity.
    */
   senderId?: string | null;
+  /**
+   * Skip the "agent stepped in → pause active flow" side effect. Set for
+   * automated system sends (e.g. the away auto-reply) that route through
+   * this core but are NOT a human taking over the conversation. Human
+   * dashboard/API sends leave this false so pausing still happens.
+   */
+  suppressFlowPause?: boolean;
 }
 
 export interface SendMessageResult {
@@ -185,6 +192,7 @@ export async function sendMessageToConversation(
     templateMessageParams,
     replyToMessageId,
     senderId,
+    suppressFlowPause,
   } = params;
 
   if (!conversationId) {
@@ -451,26 +459,30 @@ export async function sendMessageToConversation(
     .eq('id', conversationId);
 
   // Pause any active Flow run for this contact — the agent stepping in
-  // is the strongest "yield, human is here" signal. Best-effort.
-  try {
-    const { error: pauseErr } = await supabaseAdmin()
-      .from('flow_runs')
-      .update({
-        status: 'paused_by_agent',
-        ended_at: new Date().toISOString(),
-        end_reason: 'agent_replied',
-      })
-      .eq('account_id', accountId)
-      .eq('contact_id', contact.id)
-      .eq('status', 'active');
-    if (pauseErr) {
-      console.error('[flows] pause-on-agent-send failed:', pauseErr.message);
+  // is the strongest "yield, human is here" signal. Best-effort. Skipped
+  // for automated system sends (the away auto-reply) that aren't a human
+  // taking over.
+  if (!suppressFlowPause) {
+    try {
+      const { error: pauseErr } = await supabaseAdmin()
+        .from('flow_runs')
+        .update({
+          status: 'paused_by_agent',
+          ended_at: new Date().toISOString(),
+          end_reason: 'agent_replied',
+        })
+        .eq('account_id', accountId)
+        .eq('contact_id', contact.id)
+        .eq('status', 'active');
+      if (pauseErr) {
+        console.error('[flows] pause-on-agent-send failed:', pauseErr.message);
+      }
+    } catch (err) {
+      console.error(
+        '[flows] pause-on-agent-send threw:',
+        err instanceof Error ? err.message : err
+      );
     }
-  } catch (err) {
-    console.error(
-      '[flows] pause-on-agent-send threw:',
-      err instanceof Error ? err.message : err
-    );
   }
 
   return { messageId: messageRecord.id, whatsappMessageId: waMessageId };

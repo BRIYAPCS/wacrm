@@ -292,22 +292,35 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         const message = value.messages[i]
         const contact = value.contacts[i] || value.contacts[0]
 
-        await processMessage(
-          message,
-          contact,
-          // Tenancy — drives every contact / conversation lookup
-          // and the engines' active-row dispatch.
-          config.account_id,
-          // Audit / sender-of-record — used as the user_id on row
-          // inserts that need it for NOT NULL FK compliance. Always
-          // the admin who saved the WhatsApp config.
-          config.user_id,
-          // Which of the account's numbers received this — the
-          // conversation is stamped/tracked with it so replies go
-          // back out from the same number (multi-number support).
-          config.id,
-          decryptedAccessToken
-        )
+        // Per-message isolation: a batched webhook can carry several
+        // messages, and processMessage generally returns-on-error rather
+        // than throwing — but if one ever does throw (malformed payload,
+        // transient DB error), it must not abort the remaining messages in
+        // the batch. Each is independent.
+        try {
+          await processMessage(
+            message,
+            contact,
+            // Tenancy — drives every contact / conversation lookup
+            // and the engines' active-row dispatch.
+            config.account_id,
+            // Audit / sender-of-record — used as the user_id on row
+            // inserts that need it for NOT NULL FK compliance. Always
+            // the admin who saved the WhatsApp config.
+            config.user_id,
+            // Which of the account's numbers received this — the
+            // conversation is stamped/tracked with it so replies go
+            // back out from the same number (multi-number support).
+            config.id,
+            decryptedAccessToken
+          )
+        } catch (err) {
+          console.error(
+            '[webhook] processMessage threw for message',
+            message?.id,
+            err,
+          )
+        }
       }
     }
   }
@@ -329,6 +342,19 @@ const RECIPIENT_STATUS_LADDER = [
   'read',
   'replied',
 ] as const
+
+// Per-row forward-only guard for messages.status (which uses the
+// sending→sent→delivered→read ladder, plus `failed` as an early side
+// branch). Maps each incoming status to the set of current statuses it may
+// legitimately overwrite — so an out-of-order webhook can only ever
+// advance a message, never move it backwards. An incoming status absent
+// from this map is ignored.
+const MESSAGE_STATUS_PREDECESSORS: Record<string, string[] | undefined> = {
+  sent: ['sending'],
+  delivered: ['sending', 'sent'],
+  read: ['sending', 'sent', 'delivered'],
+  failed: ['sending', 'sent'],
+}
 
 function ladderLevel(s: string): number {
   const idx = (RECIPIENT_STATUS_LADDER as readonly string[]).indexOf(s)
@@ -366,13 +392,24 @@ async function handleStatusUpdate(status: {
   //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
   //    repeat across numbers), so this updates 0..N rows and must not
   //    assume a single row.
-  const { error: msgErr } = await supabaseAdmin()
-    .from('messages')
-    .update({ status: status.status })
-    .eq('message_id', status.id)
+  // Forward-only guard. Meta delivers status webhooks out of order, so a
+  // late `sent` arriving after `delivered`/`read` must NOT regress the
+  // stored status (and the inbox tick marks). We only overwrite when the
+  // current status is a valid predecessor of the incoming one. `.in(...)`
+  // applies this per-row even though message_id can match several rows
+  // (Meta ids repeat across numbers). Unknown incoming statuses are
+  // ignored. Mirrors the ladder already enforced on broadcast_recipients.
+  const preds = MESSAGE_STATUS_PREDECESSORS[status.status];
+  if (preds) {
+    const { error: msgErr } = await supabaseAdmin()
+      .from('messages')
+      .update({ status: status.status })
+      .eq('message_id', status.id)
+      .in('status', preds);
 
-  if (msgErr) {
-    console.error('Error updating message status:', msgErr)
+    if (msgErr) {
+      console.error('Error updating message status:', msgErr)
+    }
   }
 
   // Webhook fan-out for this status change happens at the END of this
@@ -692,6 +729,19 @@ async function processMessage(
   })
 
   if (msgError) {
+    // Idempotency: Meta delivers webhooks at-least-once, so it can
+    // redeliver a message we already stored (e.g. our 200 ack was slow).
+    // The unique index (conversation_id, message_id) from migration 042
+    // rejects the duplicate with 23505 — treat that as "already
+    // processed" and STOP here, so the redelivery doesn't double-increment
+    // unread, re-fire automations/flows, or send a second AI reply.
+    if (isUniqueViolation(msgError)) {
+      console.log(
+        '[webhook] duplicate inbound message ignored (Meta redelivery):',
+        message.id,
+      )
+      return
+    }
     console.error('Error inserting message:', msgError)
     return
   }
@@ -782,17 +832,29 @@ async function processMessage(
   // listens to only one trigger runs only when that trigger matches.
   if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
   if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
-  for (const triggerType of automationTriggers) {
-    runAutomationsForTrigger({
-      accountId,
-      triggerType,
-      contactId: contactRecord.id,
-      context: {
-        message_text: inboundText,
-        conversation_id: conversation.id,
-      },
-    }).catch((err) => console.error('[automations] dispatch failed:', err))
-  }
+  // Awaited (not fire-and-forget): we're inside the route's `after()`
+  // block, which only keeps the function alive for promises it can see.
+  // A detached promise here could be frozen/killed the moment `after()`'s
+  // visible work resolves — dropping the automation's own side effects
+  // (send_message, create_deal, tag writes, assign, webhook) on
+  // serverless, the same hazard as issue #301 and why the AI-reply and
+  // message.received dispatches below are awaited too. runAutomations-
+  // ForTrigger owns its try/catch and never throws, so `allSettled` here
+  // is belt-and-braces and adds no Meta-ack latency (the 200 already went
+  // out before `after()` ran).
+  await Promise.allSettled(
+    automationTriggers.map((triggerType) =>
+      runAutomationsForTrigger({
+        accountId,
+        triggerType,
+        contactId: contactRecord.id,
+        context: {
+          message_text: inboundText,
+          conversation_id: conversation.id,
+        },
+      }),
+    ),
+  )
 
   // Away auto-reply (outside business hours). Runs only for plain-text
   // inbound a flow didn't consume. When it fires we skip the AI reply
@@ -1101,6 +1163,28 @@ async function findOrCreateConversation(
     .single()
 
   if (createError) {
+    // Lost a race: a concurrent inbound for this same contact created the
+    // conversation first, and the unique index (account_id, contact_id)
+    // from migration 042 rejected our duplicate. Re-resolve the winner
+    // instead of dropping the message.
+    if (isUniqueViolation(createError)) {
+      const { data: raced } = await supabaseAdmin()
+        .from('conversations')
+        .select('*')
+        .eq('account_id', accountId)
+        .eq('contact_id', contactId)
+        .single()
+      if (raced) {
+        if (raced.whatsapp_config_id !== whatsappConfigId) {
+          await supabaseAdmin()
+            .from('conversations')
+            .update({ whatsapp_config_id: whatsappConfigId })
+            .eq('id', raced.id)
+          raced.whatsapp_config_id = whatsappConfigId
+        }
+        return { conversation: raced, created: false }
+      }
+    }
     console.error('Error creating conversation:', createError)
     return null
   }
@@ -1195,6 +1279,8 @@ async function maybeSendAwayReply(args: {
       conversationId: args.conversationId,
       messageType: 'text',
       contentText: message,
+      // Automated greeting, not a human taking over — don't pause flows.
+      suppressFlowPause: true,
     })
   } catch (err) {
     console.error(
