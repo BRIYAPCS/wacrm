@@ -73,6 +73,7 @@ import {
 } from '@/components/presence/presence-dot';
 import { InviteMemberDialog } from './invite-member-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
+import { DangerZone } from './danger-zone';
 import { ROLE_META } from './role-meta';
 
 interface Member {
@@ -559,6 +560,13 @@ export function MembersTab() {
             </Card>
           )}
         </div>
+      </RequireRole>
+
+      {/* Danger zone — owner only. Permanent account teardown. Placed
+          last so it reads as the terminal, most-destructive action on
+          the account-management panel. */}
+      <RequireRole min="owner">
+        <DangerZone />
       </RequireRole>
 
       <InviteMemberDialog
