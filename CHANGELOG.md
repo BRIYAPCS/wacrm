@@ -9,6 +9,29 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.25.0] — 2026-07-04
+
+Live **notification bell** in the app header. No migration.
+
+### Added
+
+- A bell in the top bar (every page) with a **live unread badge** that
+  combines two signals: conversations with **new messages** and unread
+  **app alerts** (assignments, @mentions).
+- Clicking it opens a dropdown with a **Messages** section (unread chats —
+  click to jump straight to the thread) and an **Alerts** section
+  (assignments/mentions — click to open + mark read), plus **Mark all
+  read** and a link to the full notifications page.
+- Everything updates in real time: the badge reflects new messages/alerts
+  as they arrive, and opening a chat clears its unread instantly.
+
+### Notes
+
+- Built on the existing realtime unread-count hooks — no per-message
+  notification rows are created, so busy inboxes don't bloat the
+  notifications table. The dropdown lazy-loads its lists and refreshes
+  whenever a count changes.
+
 ## [0.24.1] — 2026-07-04
 
 Chat-background polish. No migration, no app-code change beyond the inbox.
