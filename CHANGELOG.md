@@ -9,6 +9,30 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.19.0] — 2026-07-04
+
+Makes wacrm an **installable PWA** — add it to a phone or desktop home
+screen and launch it in its own window.
+
+No migration. Nothing to configure; the service worker registers itself
+in production builds.
+
+### Added
+
+- **Web app manifest** (`/manifest.webmanifest`) — name, brand icons,
+  `standalone` display, and a dark theme/splash so launch has no color
+  flash.
+- **Install icons** — 192, 512, and maskable-512 PNGs plus a 180px
+  Apple touch icon (brand violet + chat mark).
+- **Service worker** (`public/sw.js`) — offline shell + smart caching:
+  cache-first for hashed Next assets, stale-while-revalidate for icons/
+  fonts, network-first for navigations with an offline fallback.
+  Deliberately **never caches `/api` or Supabase** responses, so data is
+  never stale. Registers only in production (so it can't fight dev HMR).
+- **iOS standalone metadata** (`appleWebApp`) for add-to-home-screen on
+  Apple devices; `worker-src`/`manifest-src` added to the CSP so both keep
+  working if the policy is later enforced.
+
 ## [0.18.0] — 2026-07-04
 
 Adds an **audit log** — a tamper-resistant record of sensitive account
