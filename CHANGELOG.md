@@ -9,6 +9,24 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.19.7] — 2026-07-04
+
+Reports → Team Performance now states its data horizon. **Migration
+required:** apply `supabase/migrations/043_account_report_attribution.sql`.
+
+### Added
+
+- **Team Performance is now self-describing.** Per-agent counts are
+  attributed by who sent each message, which is only recorded from when
+  agent attribution was added — so a long range could look like an agent
+  did less than they really did. The card now spells out that it counts
+  only signed-in-agent sends (not automated AI/away/flow replies), and,
+  when the selected range reaches back before attribution began, shows the
+  date **"per-agent tracking began …"** so older days don't read as
+  zero activity. (We intentionally don't back-fill historical attribution —
+  it can't be told apart from automated sends, which would inflate agents'
+  numbers.)
+
 ## [0.19.6] — 2026-07-04
 
 ### Fixed

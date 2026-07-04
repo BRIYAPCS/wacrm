@@ -39,6 +39,13 @@ interface Report {
   summary: ReportSummary
   daily: DailyPoint[]
   agents: AgentRow[]
+  /**
+   * Earliest date any agent message was attributed to a specific user
+   * (null if none yet). Per-agent counts only exist from this point —
+   * older agent sends predate attribution and automated replies are never
+   * attributed — so the UI labels the window the numbers actually cover.
+   */
+  agent_attribution_since: string | null
 }
 
 export default function ReportsPage() {
@@ -85,6 +92,16 @@ export default function ReportsPage() {
 
   const report = cache[range]
   const showSkeleton = loading && !report
+
+  // Per-agent numbers only exist from when agent attribution began. If the
+  // selected range reaches back before that, say so — otherwise the older
+  // days silently read as zero activity.
+  const attributionSince = report?.agent_attribution_since
+    ? new Date(report.agent_attribution_since)
+    : null
+  const rangeStart = new Date(Date.now() - range * 24 * 60 * 60 * 1000)
+  const rangePredatesAttribution =
+    attributionSince !== null && attributionSince > rangeStart
 
   return (
     <div className="space-y-5">
@@ -185,12 +202,37 @@ export default function ReportsPage() {
 
       {/* Agent leaderboard */}
       <section className="rounded-xl border border-border bg-card">
-        <header className="flex items-center gap-2 border-b border-border px-5 py-4">
-          <Users className="h-4 w-4 text-muted-foreground" />
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Team Performance</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">Agent activity in the selected range</p>
+        <header className="border-b border-border px-5 py-4">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Team Performance</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">Agent activity in the selected range</p>
+            </div>
           </div>
+          {/* Be explicit about what the metric counts, and about its data
+              horizon, so a lower-than-expected number reads as "not tracked
+              yet" rather than "no work done". */}
+          {report ? (
+            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              Counts messages sent by a signed-in agent — automated replies
+              (AI, away, flows) aren&rsquo;t included.
+              {rangePredatesAttribution && attributionSince ? (
+                <>
+                  {' '}
+                  Per-agent tracking began{' '}
+                  <span className="font-medium text-foreground">
+                    {attributionSince.toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </span>
+                  ; earlier days aren&rsquo;t reflected here.
+                </>
+              ) : null}
+            </p>
+          ) : null}
         </header>
         {showSkeleton ? (
           <div className="space-y-2 p-5">
