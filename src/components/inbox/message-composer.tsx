@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useMemo,
   KeyboardEvent,
 } from "react";
 import {
@@ -19,6 +20,7 @@ import {
   X,
   Loader2,
   Sparkles,
+  MessageSquareText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -37,6 +39,14 @@ import {
   MEDIA_MAX_BYTES_BY_KIND,
 } from "@/lib/storage/upload-media";
 import { ReplyQuote } from "./reply-quote";
+import { applyMergeFields, type MergeContext } from "@/lib/canned/merge";
+
+interface CannedItem {
+  id: string;
+  shortcut: string;
+  title: string;
+  content: string;
+}
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -99,6 +109,9 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /** Contact / agent / account values for resolving {{merge.fields}} in
+   *  saved replies at insert time. */
+  mergeContext?: MergeContext;
 }
 
 function formatDuration(seconds: number): string {
@@ -120,11 +133,43 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
+  mergeContext,
 }: MessageComposerProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Saved replies (canned responses). Loaded once; opened either by the
+  // toolbar button or by typing "/" as the first character of a message.
+  const [canned, setCanned] = useState<CannedItem[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [pickerIndex, setPickerIndex] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/canned-responses", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d) setCanned(d.canned_responses ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const pickerMatches = useMemo(() => {
+    if (!pickerOpen) return [] as CannedItem[];
+    const q = pickerQuery.toLowerCase();
+    return canned.filter(
+      (c) =>
+        !q ||
+        c.shortcut.toLowerCase().includes(q) ||
+        c.title.toLowerCase().includes(q),
+    );
+  }, [pickerOpen, pickerQuery, canned]);
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
@@ -207,22 +252,85 @@ export function MessageComposer({
     }
   }, [text, sending, sessionExpired, onSend, replyTo?.id]);
 
+  const selectCanned = useCallback(
+    (item: CannedItem) => {
+      const resolved = mergeContext
+        ? applyMergeFields(item.content, mergeContext)
+        : item.content;
+      setText(resolved);
+      setPickerOpen(false);
+      setPickerQuery("");
+      requestAnimationFrame(() => {
+        adjustHeight();
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      });
+    },
+    [mergeContext, adjustHeight],
+  );
+
+  const openCannedPicker = useCallback(() => {
+    if (inputsDisabled) return;
+    setPickerQuery("");
+    setPickerIndex(0);
+    setPickerOpen((o) => !o);
+  }, [inputsDisabled]);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // When the saved-replies picker is open, arrows navigate it and
+      // Enter selects the highlighted reply instead of sending.
+      if (pickerOpen && pickerMatches.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setPickerIndex((i) => (i + 1) % pickerMatches.length);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setPickerIndex(
+            (i) => (i - 1 + pickerMatches.length) % pickerMatches.length,
+          );
+          return;
+        }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          selectCanned(pickerMatches[pickerIndex] ?? pickerMatches[0]);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setPickerOpen(false);
+          return;
+        }
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend]
+    [handleSend, pickerOpen, pickerMatches, pickerIndex, selectCanned],
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setText(e.target.value);
+      const value = e.target.value;
+      setText(value);
       adjustHeight();
+      // "/" as the very first character opens the saved-replies picker,
+      // filtered by what follows. A space or any other char closes it.
+      if (/^\/[a-zA-Z0-9_-]*$/.test(value)) {
+        setPickerQuery(value.slice(1));
+        setPickerIndex(0);
+        setPickerOpen(true);
+      } else {
+        setPickerOpen(false);
+      }
     },
-    [adjustHeight]
+    [adjustHeight],
   );
 
   // Ask the AI assistant for a suggested reply and drop it into the
@@ -517,7 +625,45 @@ export function MessageComposer({
           </Button>
         </div>
       ) : (
-        <div className="flex items-end gap-2">
+        <div className="relative">
+          {pickerOpen && pickerMatches.length > 0 && (
+            <div className="absolute bottom-full left-0 z-20 mb-2 max-h-64 w-full max-w-md overflow-y-auto rounded-xl border border-border bg-popover shadow-lg">
+              <p className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                Saved replies
+              </p>
+              <ul className="pb-1">
+                {pickerMatches.map((item, i) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      // onMouseDown (not onClick) so selecting fires before
+                      // the textarea blurs and the popover unmounts.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        selectCanned(item);
+                      }}
+                      onMouseEnter={() => setPickerIndex(i)}
+                      className={cn(
+                        "flex w-full flex-col gap-0.5 px-3 py-1.5 text-left",
+                        i === pickerIndex ? "bg-muted" : "hover:bg-muted/60",
+                      )}
+                    >
+                      <span className="flex items-center gap-2 text-sm text-foreground">
+                        {item.title}
+                        <span className="rounded bg-background px-1 font-mono text-[10px] text-muted-foreground">
+                          /{item.shortcut}
+                        </span>
+                      </span>
+                      <span className="line-clamp-1 text-xs text-muted-foreground">
+                        {item.content}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="flex items-end gap-2">
           {/* Attach menu — photo / video / document / voice. */}
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -586,6 +732,18 @@ export function MessageComposer({
             )}
           </GatedButton>
 
+          <GatedButton
+            variant="ghost"
+            size="sm"
+            canAct={!readOnly}
+            gateReason="send messages"
+            title={readOnly ? undefined : "Saved replies (or type /)"}
+            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+            onClick={openCannedPicker}
+          >
+            <MessageSquareText className="h-4 w-4" />
+          </GatedButton>
+
           <textarea
             ref={textareaRef}
             value={text}
@@ -620,6 +778,7 @@ export function MessageComposer({
           >
             <Send className="h-4 w-4" />
           </GatedButton>
+          </div>
         </div>
       )}
 

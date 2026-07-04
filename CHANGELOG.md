@@ -9,6 +9,25 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.9.0] — 2026-07-04
+
+Adds **saved replies (canned responses)** — reusable message snippets
+your team inserts in the inbox with a `/shortcut`.
+
+### Added
+
+- **Saved replies.** Manage account-shared snippets under **Settings →
+  Saved replies** (agent+ to edit, everyone can use). In the inbox
+  composer, type `/` to open a filterable picker (↑/↓ + Enter) or click
+  the saved-replies button; the snippet is inserted with merge fields
+  resolved — `{{contact.name}}`, `{{contact.phone}}`,
+  `{{contact.company}}`, `{{contact.email}}`, `{{agent.name}}`,
+  `{{account.name}}`. Backed by `/api/canned-responses`.
+  **Migration required:** `supabase/migrations/032_canned_responses.sql`
+  adds the `canned_responses` table, RLS (member read / agent+ write),
+  and a case-insensitive unique shortcut per account. Idempotent — apply
+  with `npm run db:deploy`.
+
 ## [0.8.2] — 2026-07-04
 
 ### Fixed

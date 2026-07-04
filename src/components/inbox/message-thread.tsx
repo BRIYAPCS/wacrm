@@ -164,7 +164,7 @@ export function MessageThread({
   contactPanelOpen,
   onToggleContactPanel,
 }: MessageThreadProps) {
-  const { user } = useAuth();
+  const { user, profile, account } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1078,6 +1078,16 @@ export function MessageThread({
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        mergeContext={{
+          contact: {
+            name: contact.name,
+            phone: contact.phone,
+            company: contact.company,
+            email: contact.email,
+          },
+          agent: { name: profile?.full_name ?? null },
+          account: { name: account?.name ?? null },
+        }}
       />
 
       <TemplatePicker
