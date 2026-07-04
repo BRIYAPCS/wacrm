@@ -1,19 +1,9 @@
-import type { AiProvider } from './types'
-
 // ============================================================
 // Tunables + prompt scaffold for the AI reply assistant.
+//
+// Per-provider default models live in providers/registry.ts
+// (`defaultModelFor` / `AI_PROVIDERS`) — the single source of truth.
 // ============================================================
-
-/**
- * Sensible default model per provider, pre-filled in the settings form.
- * Kept as editable free text in the UI — model IDs churn fast and a
- * BYO-key forker may want a cheaper/newer one — so these are only the
- * starting point, never a hard allow-list.
- */
-export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
-  openai: 'gpt-5.4-mini',
-  anthropic: 'claude-haiku-4-5-20251001',
-}
 
 /**
  * Sentinel the model is instructed to emit (in auto-reply mode) when it

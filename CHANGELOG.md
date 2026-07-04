@@ -9,6 +9,30 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.22.0] — 2026-07-04
+
+The AI assistant now works with **any provider**. **Migration required:**
+apply `supabase/migrations/046_ai_providers.sql`.
+
+### Added
+
+- **Many AI providers** in Settings → AI: OpenAI, Anthropic, **Google
+  Gemini, Azure OpenAI, OpenRouter, Groq, DeepSeek, Mistral, Together, xAI,
+  Zhipu GLM**, and a **Custom / Self-hosted (OpenAI-compatible)** option for
+  any endpoint — Ollama, LM Studio, LocalAI, vLLM, or a proxy.
+- **Custom endpoint (`base_url`)** field for Azure + self-hosted providers,
+  with a **keyless** option for local servers that need no API key.
+- One OpenAI-compatible adapter (base URL + auth style) covers every
+  OpenAI-shaped provider; Anthropic keeps its native adapter. Adding a
+  provider is now a one-entry change in the provider registry.
+
+### Notes
+
+- Existing OpenAI/Anthropic configs keep working unchanged.
+- For a self-hosted model, the endpoint must be reachable from where the
+  app runs; validation on save is best-effort for custom endpoints (it
+  saves with a warning if the endpoint can't be reached at that moment).
+
 ## [0.21.1] — 2026-07-04
 
 Deployment documentation + per-customer setup ergonomics. No migration, no

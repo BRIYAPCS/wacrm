@@ -25,21 +25,22 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SettingsPanelHead } from './settings-panel-head';
+import {
+  AI_PROVIDERS,
+  AI_PROVIDER_IDS,
+  defaultModelFor,
+  providerMeta,
+} from '@/lib/ai/providers/registry';
 import { AiKnowledgeCard } from './ai-knowledge';
-import { AI_PROVIDER_DEFAULT_MODEL } from '@/lib/ai/defaults';
 import type { AiProvider } from '@/lib/ai/types';
 
 const MASKED_KEY = '••••••••••••••••';
 
-const PROVIDER_LABEL: Record<AiProvider, string> = {
-  openai: 'OpenAI',
-  anthropic: 'Anthropic (Claude)',
-};
-
-const KEY_PLACEHOLDER: Record<AiProvider, string> = {
-  openai: 'sk-...',
-  anthropic: 'sk-ant-...',
-};
+// Any current model default is treated as "not customised", so switching
+// providers swaps the model instead of clobbering a hand-typed one.
+const DEFAULT_MODELS = new Set(
+  AI_PROVIDER_IDS.map((p) => defaultModelFor(p)).filter(Boolean),
+);
 
 export function AiConfig() {
   const { accountId, accountRole, profileLoading } = useAuth();
@@ -52,7 +53,8 @@ export function AiConfig() {
 
   const [configured, setConfigured] = useState(false);
   const [provider, setProvider] = useState<AiProvider>('openai');
-  const [model, setModel] = useState(AI_PROVIDER_DEFAULT_MODEL.openai);
+  const [model, setModel] = useState(defaultModelFor('openai'));
+  const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [keyEdited, setKeyEdited] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -84,6 +86,7 @@ export function AiConfig() {
         setConfigured(true);
         setProvider(data.provider);
         setModel(data.model);
+        setBaseUrl(data.base_url ?? '');
         setSystemPrompt(data.system_prompt ?? '');
         setIsActive(data.is_active);
         setAutoReplyEnabled(data.auto_reply_enabled);
@@ -109,14 +112,14 @@ export function AiConfig() {
   }, [accountId, fetchConfig]);
 
   // Swap the model default when the provider changes, unless the user
-  // typed a custom model.
+  // typed a custom model. Also clear the base URL when moving to a
+  // provider that doesn't take one.
   const handleProviderChange = (next: AiProvider) => {
     setProvider(next);
-    const isDefaultModel =
-      model === AI_PROVIDER_DEFAULT_MODEL.openai ||
-      model === AI_PROVIDER_DEFAULT_MODEL.anthropic ||
-      model.trim() === '';
-    if (isDefaultModel) setModel(AI_PROVIDER_DEFAULT_MODEL[next]);
+    if (DEFAULT_MODELS.has(model) || model.trim() === '') {
+      setModel(defaultModelFor(next));
+    }
+    if (!providerMeta(next).requiresBaseUrl) setBaseUrl('');
   };
 
   const keyPayload = () => (keyEdited ? apiKey.trim() : undefined);
@@ -128,6 +131,7 @@ export function AiConfig() {
   const buildBody = () => ({
     provider,
     model: model.trim(),
+    base_url: baseUrl.trim() || null,
     api_key: keyPayload(),
     embeddings_api_key: embeddingsKeyPayload(),
     system_prompt: systemPrompt.trim() || null,
@@ -145,11 +149,12 @@ export function AiConfig() {
         body: JSON.stringify({
           provider,
           model: model.trim(),
+          base_url: baseUrl.trim() || null,
           api_key: keyPayload(),
         }),
       });
       const data = await res.json();
-      if (res.ok) toast.success('Key works — the provider responded.');
+      if (res.ok) toast.success('Connected — the provider responded.');
       else toast.error(data.error ?? 'The provider rejected the request.');
     } catch {
       toast.error('Could not reach the provider.');
@@ -159,11 +164,17 @@ export function AiConfig() {
   };
 
   const handleSave = async () => {
+    const meta = providerMeta(provider);
     if (!model.trim()) {
       toast.error('Enter a model name.');
       return;
     }
-    if (!configured && !keyEdited) {
+    if (meta.requiresBaseUrl && !baseUrl.trim()) {
+      toast.error('Enter the endpoint URL for this provider.');
+      return;
+    }
+    // A key is required on first setup — except keyless local servers.
+    if (!configured && !keyEdited && !meta.keyOptional) {
       toast.error('Enter your API key.');
       return;
     }
@@ -176,7 +187,11 @@ export function AiConfig() {
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success('AI assistant saved.');
+        if (data.warning) {
+          toast.warning(`Saved. ${data.warning}`);
+        } else {
+          toast.success('AI assistant saved.');
+        }
         await fetchConfig();
       } else {
         toast.error(data.error ?? 'Failed to save.');
@@ -226,7 +241,7 @@ export function AiConfig() {
     <div>
       <SettingsPanelHead
         title="Agent setup"
-        description="Bring your own OpenAI or Anthropic key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground."
+        description="Bring your own key from any provider — OpenAI, Anthropic, Google Gemini, Azure, OpenRouter, Groq, DeepSeek, Mistral, xAI, GLM, or a self-hosted / OpenAI-compatible server (Ollama, LM Studio, vLLM…). wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. Powers AI-drafted replies, the auto-reply bot, and the Playground."
       />
 
       {!canEdit && (
@@ -259,10 +274,11 @@ export function AiConfig() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="openai">{PROVIDER_LABEL.openai}</SelectItem>
-                    <SelectItem value="anthropic">
-                      {PROVIDER_LABEL.anthropic}
-                    </SelectItem>
+                    {AI_PROVIDER_IDS.map((id) => (
+                      <SelectItem key={id} value={id}>
+                        {AI_PROVIDERS[id].label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -273,14 +289,44 @@ export function AiConfig() {
                   id="ai-model"
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
-                  placeholder={AI_PROVIDER_DEFAULT_MODEL[provider]}
+                  placeholder={defaultModelFor(provider) || 'e.g. llama3.1'}
                   disabled={disabled}
                 />
               </div>
             </div>
 
+            {/* Endpoint URL — for Azure + self-hosted/custom (OpenAI-compatible)
+                providers. Hidden for the hosted providers that have a fixed
+                endpoint. */}
+            {providerMeta(provider).requiresBaseUrl && (
+              <div className="space-y-2">
+                <Label htmlFor="ai-base-url">Endpoint URL</Label>
+                <Input
+                  id="ai-base-url"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://…/v1"
+                  disabled={disabled}
+                  autoComplete="off"
+                  className="font-mono text-xs"
+                />
+                {providerMeta(provider).hint && (
+                  <p className="text-xs text-muted-foreground">
+                    {providerMeta(provider).hint}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="ai-key">API key</Label>
+              <Label htmlFor="ai-key">
+                API key
+                {providerMeta(provider).keyOptional && (
+                  <span className="font-normal text-muted-foreground">
+                    {' '}(optional)
+                  </span>
+                )}
+              </Label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Input
@@ -297,7 +343,7 @@ export function AiConfig() {
                         setKeyEdited(true);
                       }
                     }}
-                    placeholder={KEY_PLACEHOLDER[provider]}
+                    placeholder={providerMeta(provider).keyPlaceholder}
                     disabled={disabled}
                     autoComplete="off"
                   />
