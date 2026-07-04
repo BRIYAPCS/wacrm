@@ -163,6 +163,110 @@ export async function extractFromFile(args: {
   )
 }
 
+/** Cap on redirect hops we'll follow before giving up. */
+const MAX_REDIRECTS = 5
+
+/**
+ * Fetch a URL while keeping the SSRF guard honest across redirects.
+ *
+ * `isDeliverableUrl` only proves the host we're ABOUT to hit is public, so
+ * a bare `redirect: 'follow'` would let a public URL 3xx-bounce to an
+ * internal / cloud-metadata host that never gets re-checked. We follow
+ * redirects manually instead, re-validating every hop, and share one
+ * timeout across all hops so the total wall time stays bounded.
+ */
+async function fetchGuarded(
+  start: URL,
+): Promise<{ res: Response; finalUrl: URL }> {
+  const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  let current = start
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (!(await isDeliverableUrl(current.toString()))) {
+      throw new ExtractError('That URL points to a private or unreachable address.')
+    }
+
+    let res: Response
+    try {
+      res = await fetch(current.toString(), {
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'wacrm-knowledge-bot/1.0',
+          Accept: 'text/html,application/pdf,text/plain,*/*',
+        },
+        signal,
+      })
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'TimeoutError') {
+        throw new ExtractError('The page took too long to respond.', 504)
+      }
+      throw new ExtractError('Could not reach that URL.', 502)
+    }
+
+    // On Node/undici, `redirect: 'manual'` returns the real 3xx response
+    // with a readable Location — resolve it, re-validate, and continue.
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location')
+      if (!location) {
+        throw new ExtractError('That URL redirects in a way we can’t safely follow.', 502)
+      }
+      let next: URL
+      try {
+        next = new URL(location, current)
+      } catch {
+        throw new ExtractError('That URL redirects to an invalid address.', 502)
+      }
+      if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+        throw new ExtractError('That URL redirects to an unsupported address.', 502)
+      }
+      current = next
+      continue
+    }
+
+    return { res, finalUrl: current }
+  }
+
+  throw new ExtractError('That URL redirects too many times.', 502)
+}
+
+/**
+ * Read a response body, aborting as soon as it exceeds MAX_SOURCE_BYTES so
+ * a server that omits / understates `content-length` can't stream an
+ * unbounded body into memory. Falls back to `arrayBuffer()` only when the
+ * body isn't a stream (already-bounded).
+ */
+async function readCappedBody(res: Response): Promise<Buffer> {
+  const len = res.headers.get('content-length')
+  if (len && Number(len) > MAX_SOURCE_BYTES) {
+    throw new ExtractError('That page is larger than the 10 MB limit.')
+  }
+
+  const body = res.body
+  if (!body) {
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (buf.byteLength > MAX_SOURCE_BYTES) {
+      throw new ExtractError('That page is larger than the 10 MB limit.')
+    }
+    return buf
+  }
+
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+    total += value.byteLength
+    if (total > MAX_SOURCE_BYTES) {
+      await reader.cancel().catch(() => {})
+      throw new ExtractError('That page is larger than the 10 MB limit.')
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks)
+}
+
 // ---- from a URL --------------------------------------------
 export async function extractFromUrl(rawUrl: string): Promise<Extracted & { url: string }> {
   let url: URL
@@ -175,44 +279,19 @@ export async function extractFromUrl(rawUrl: string): Promise<Extracted & { url:
     throw new ExtractError('Only http(s) URLs are supported.')
   }
 
-  // SSRF guard — refuse private / reserved / metadata hosts (reuses the
-  // same DNS-resolving check the outbound webhooks use).
-  if (!(await isDeliverableUrl(url.toString()))) {
-    throw new ExtractError('That URL points to a private or unreachable address.')
-  }
-
-  let res: Response
-  try {
-    res = await fetch(url.toString(), {
-      redirect: 'follow',
-      headers: {
-        // A UA + Accept help some sites return real HTML.
-        'User-Agent': 'wacrm-knowledge-bot/1.0',
-        Accept: 'text/html,application/pdf,text/plain,*/*',
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    })
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'TimeoutError') {
-      throw new ExtractError('The page took too long to respond.', 504)
-    }
-    throw new ExtractError('Could not reach that URL.', 502)
-  }
+  // SSRF-guarded fetch: re-validates the host on every redirect hop (a
+  // public URL must not be able to 3xx-bounce to an internal / metadata
+  // host) and streams the body under a hard size cap.
+  const { res, finalUrl } = await fetchGuarded(url)
 
   if (!res.ok) {
     throw new ExtractError(`The page returned HTTP ${res.status}.`, 502)
   }
 
-  const lenHeader = Number(res.headers.get('content-length'))
-  if (Number.isFinite(lenHeader) && lenHeader > MAX_SOURCE_BYTES) {
-    throw new ExtractError('That page is larger than the 10 MB limit.')
-  }
-
   const contentType = (res.headers.get('content-type') ?? '').toLowerCase()
-  const buf = Buffer.from(await res.arrayBuffer())
-  if (buf.byteLength > MAX_SOURCE_BYTES) {
-    throw new ExtractError('That page is larger than the 10 MB limit.')
-  }
+  const buf = await readCappedBody(res)
+  // Everything below reports the final (post-redirect) URL.
+  url = finalUrl
 
   // PDF served at a URL.
   if (contentType.includes('pdf')) {

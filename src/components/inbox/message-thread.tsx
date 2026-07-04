@@ -894,7 +894,7 @@ export function MessageThread({
     >
       {/* Header — solid card surface sits on top of the wallpaper so the
           name/avatar/dropdowns stay legible. */}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {/* Back-to-list button — mobile only. Hidden on lg+ where the
               conversation list is always visible next to the thread. */}
@@ -1215,7 +1215,7 @@ export function MessageThread({
       {/* Per-conversation chat-background picker (owner/admin only). */}
       {canEditSettings && (
         <Dialog open={bgDialogOpen} onOpenChange={setBgDialogOpen}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Chat background</DialogTitle>
               <DialogDescription>
