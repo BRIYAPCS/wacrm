@@ -9,6 +9,17 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.8.2] — 2026-07-04
+
+### Fixed
+
+- **New-flow dialog now scrolls.** With twelve templates (0.8.1) the
+  gallery grew taller than the viewport and the dialog didn't scroll —
+  the close button and the "start blank" input/button were unreachable.
+  The body now scrolls while the header and footer stay pinned. Also
+  fixes a latent typecheck error in the template test that a stale
+  incremental cache had masked. No migration.
+
 ## [0.8.1] — 2026-07-04
 
 ### Added
