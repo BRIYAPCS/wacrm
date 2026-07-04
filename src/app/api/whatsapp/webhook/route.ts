@@ -302,6 +302,10 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
+          // Which of the account's numbers received this — the
+          // conversation is stamped/tracked with it so replies go
+          // back out from the same number (multi-number support).
+          config.id,
           decryptedAccessToken
         )
       }
@@ -570,6 +574,8 @@ async function processMessage(
   // (contacts, conversations). Always the admin who saved the
   // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
+  // The whatsapp_config row id for the number that received this message.
+  whatsappConfigId: string,
   accessToken: string
 ) {
   const senderPhone = normalizePhone(message.from)
@@ -589,7 +595,8 @@ async function processMessage(
   const convResult = await findOrCreateConversation(
     accountId,
     configOwnerUserId,
-    contactRecord.id
+    contactRecord.id,
+    whatsappConfigId
   )
   if (!convResult) return
   const conversation = convResult.conversation
@@ -1052,6 +1059,7 @@ async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
+  whatsappConfigId: string,
 ) {
   // Look for existing conversation in this account
   const { data: existing, error: findError } = await supabaseAdmin()
@@ -1062,6 +1070,20 @@ async function findOrCreateConversation(
     .single()
 
   if (!findError && existing) {
+    // Track the "current number": if this contact messaged a different
+    // (or previously-unset) number than the thread is on, re-point it so
+    // replies go back out from the number they just used.
+    if (existing.whatsapp_config_id !== whatsappConfigId) {
+      const { error: repointErr } = await supabaseAdmin()
+        .from('conversations')
+        .update({ whatsapp_config_id: whatsappConfigId })
+        .eq('id', existing.id)
+      if (repointErr) {
+        console.error('Error updating conversation number:', repointErr)
+      } else {
+        existing.whatsapp_config_id = whatsappConfigId
+      }
+    }
     return { conversation: existing, created: false }
   }
 
@@ -1073,6 +1095,7 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: configOwnerUserId,
       contact_id: contactId,
+      whatsapp_config_id: whatsappConfigId,
     })
     .select()
     .single()

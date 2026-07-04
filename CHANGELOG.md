@@ -9,6 +9,43 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.17.0] — 2026-07-04
+
+Adds **multi-number support** — connect several WhatsApp numbers to one
+account (e.g. Sales + Support) and run them all from one inbox.
+
+**Migration required:** apply `supabase/migrations/039_multi_number.sql`
+(relaxes the one-number-per-account limit, adds `is_default` / `label` to
+`whatsapp_config` and `whatsapp_config_id` to `conversations`, plus a
+single-default trigger and backfill). Existing numbers are migrated
+automatically: your current number becomes the default and every
+conversation is stamped with it — no reconnection needed.
+
+### Added
+
+- **Multiple numbers per account.** Add a second (third, …) number from
+  Settings → WhatsApp using the same connection form. A **Connected
+  numbers** panel lists them all and lets you **set the default**,
+  **rename**, or **remove** a number.
+- **Per-conversation number tracking.** Each thread records which of your
+  numbers it's on. Inbound messages re-point the thread to the number the
+  customer used, and **replies go out from that same number** — agent
+  sends, AI auto-replies, away messages, flows, and automations all
+  respect it. The inbox header shows a small badge of the active number
+  (only when you have more than one).
+- **Default number** for outbound with no thread context — public-API
+  sends and broadcasts go from the default.
+- **Numbers API:** `GET /api/whatsapp/config/list`, plus `PATCH` (rename /
+  set-default) and per-id `DELETE` on `/api/whatsapp/config`.
+
+### Changed
+
+- Every WhatsApp code path that previously assumed a single number
+  (sending, media proxy, reactions, templates, broadcasts, registration
+  diagnostics, the inbox connected-banner) now resolves the correct
+  number via a shared resolver, so nothing breaks once a second number is
+  connected.
+
 ## [0.16.0] — 2026-07-04
 
 Adds a dedicated **Reports** page for analytics over time.

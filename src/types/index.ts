@@ -159,6 +159,12 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  /**
+   * Which of the account's WhatsApp numbers this thread is currently on
+   * (multi-number, migration 039). Null on legacy rows or when the
+   * account has no number connected. Replies go out from this number.
+   */
+  whatsapp_config_id?: string | null;
 }
 
 // ============================================================

@@ -28,6 +28,7 @@ import {
   type MediaKind,
 } from '@/lib/whatsapp/meta-api';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
+import { resolveAccountConfig } from '@/lib/whatsapp/resolve-config';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   sanitizePhoneForMeta,
@@ -219,19 +220,36 @@ export async function sendMessageToConversation(
     );
   }
 
-  // WhatsApp config, account-scoped.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
+  // WhatsApp config — the number this conversation is on (multi-number:
+  // reply from the same number the customer messaged), falling back to
+  // the account default when the thread has no number yet.
+  const config = await resolveAccountConfig(db, accountId, {
+    preferId: conversation.whatsapp_config_id,
+  });
 
-  if (configError || !config) {
+  if (!config) {
     throw new SendMessageError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
       400
     );
+  }
+
+  // Remember which number this thread went out on, so future replies (and
+  // the inbox badge) stay consistent even before the next inbound.
+  if (!conversation.whatsapp_config_id) {
+    void db
+      .from('conversations')
+      .update({ whatsapp_config_id: config.id })
+      .eq('id', conversationId)
+      .then(({ error }: { error: { message: string } | null }) => {
+        if (error) {
+          console.warn(
+            '[send-message] failed to stamp conversation number:',
+            error.message,
+          );
+        }
+      });
   }
 
   const accessToken = decrypt(config.access_token);
