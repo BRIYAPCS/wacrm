@@ -37,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MessageBubble } from "./message-bubble";
+import { ConversationNotes } from "./conversation-notes";
 import { MessageActions } from "./message-actions";
 import {
   MessageComposer,
@@ -1070,6 +1071,12 @@ export function MessageThread({
       </div>
 
       {/* Composer */}
+      <ConversationNotes
+        conversationId={conversation.id}
+        members={profiles}
+        currentUserId={user?.id ?? null}
+      />
+
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}

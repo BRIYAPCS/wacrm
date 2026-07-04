@@ -9,6 +9,24 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.13.0] — 2026-07-04
+
+Adds **internal notes with @mentions** — teammates collaborate inside a
+conversation without the customer ever seeing it.
+
+### Added
+
+- **Internal notes.** A collapsible "Internal notes" panel in each
+  conversation thread (agent+ to add, everyone can read). Notes are
+  team-only and never sent to WhatsApp. Type `@` to mention a teammate
+  (autocomplete); the mentioned member gets a **notification** that links
+  back to the conversation. Notes appear live via realtime. Backed by
+  `/api/conversations/[id]/notes`.
+  **Migration required:** `supabase/migrations/036_conversation_notes.sql`
+  adds the `conversation_notes` table + RLS, a `mention` notification
+  type, a SECURITY DEFINER trigger that notifies @mentioned members, and
+  realtime. Idempotent — apply with `npm run db:deploy`.
+
 ## [0.12.0] — 2026-07-04
 
 Adds **round-robin auto-assignment** — new inbound conversations are
