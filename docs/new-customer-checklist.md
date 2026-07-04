@@ -86,6 +86,10 @@ Repo → **Settings → Secrets and variables → Actions**:
       back works.
 - [ ] Give the customer admin their login; they invite the rest of the team
       (Settings → Team members).
+- [ ] _(Optional)_ AI assistant is self-serve, **per account** — the admin
+      adds their own provider key + knowledge base under **Settings → AI**.
+      Nothing to set at deploy time. See
+      [ai-assistant.md](./ai-assistant.md).
 
 ---
 

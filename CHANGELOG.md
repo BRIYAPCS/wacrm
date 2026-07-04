@@ -9,6 +9,21 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.23.1] — 2026-07-04
+
+Documentation. No migration, no app-code change.
+
+### Changed
+
+- New **[docs/ai-assistant.md](./docs/ai-assistant.md)** guide covering the
+  full AI feature set: every supported provider (incl. self-hosted /
+  OpenAI-compatible), drafting + auto-reply, and the knowledge base
+  (typed text / uploaded documents / website URLs, retrieval, limits).
+- README + DEPLOYMENT AI sections updated to reflect **any provider** and
+  document/URL knowledge sources (previously described OpenAI/Anthropic +
+  typed text only). Linked the new guide from README, DEPLOYMENT, and the
+  new-customer checklist.
+
 ## [0.23.0] — 2026-07-04
 
 Feed the AI knowledge base from **documents and websites**, not just typed

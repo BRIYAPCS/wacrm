@@ -298,8 +298,12 @@ Set these in your host's env (and in `.env` for local + `db:deploy`).
 | `AI_CONTEXT_MESSAGE_LIMIT` | Recent messages sent to the model as context (default `20`). |
 
 > **No global AI key.** The AI assistant is bring-your-own-key **per
-> account** (Settings → AI Assistant), stored encrypted under
-> `ENCRYPTION_KEY`. Nothing to set here.
+> account** (Settings → AI), stored encrypted under `ENCRYPTION_KEY`.
+> Nothing to set in the environment. Any provider works — OpenAI,
+> Anthropic, Gemini, Azure, OpenRouter, Groq, DeepSeek, Mistral, xAI,
+> GLM, or a self-hosted / OpenAI-compatible endpoint. A self-hosted
+> endpoint (Ollama, LM Studio, vLLM…) must be reachable from where the
+> app runs. See [docs/ai-assistant.md](./docs/ai-assistant.md).
 
 ---
 
@@ -331,5 +335,6 @@ required"** or **"Setup required"** notes on the versions you're crossing.
 
 More: [docs/database-setup.md](./docs/database-setup.md) ·
 [docs/email-setup.md](./docs/email-setup.md) ·
+[docs/ai-assistant.md](./docs/ai-assistant.md) ·
 [docs/automations-and-cron.md](./docs/automations-and-cron.md) ·
 [docs/public-api.md](./docs/public-api.md).
