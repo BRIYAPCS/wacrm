@@ -9,6 +9,21 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.15.0] — 2026-07-04
+
+Adds **AI conversation summary** with sentiment and one-click tagging.
+
+### Added
+
+- **Summarize with AI.** An action in the inbox contact panel (agent+)
+  reads the conversation and returns a 2–3 sentence summary, a **sentiment**
+  badge (positive / neutral / negative), and up to four **suggested tags**
+  — tap one to apply it to the contact (creating the tag if it doesn't
+  exist yet). Uses your account's BYO provider/key; read-only (nothing is
+  sent or stored). Works even with the auto-reply switch off. Backed by
+  `POST /api/ai/summarize` and `POST /api/contacts/[id]/tags`. No
+  migration.
+
 ## [0.14.0] — 2026-07-04
 
 Adds **business hours** with an optional **away auto-reply**.

@@ -16,7 +16,12 @@ export interface GenerateArgs {
  * Dispatches to the right adapter, then parses the handoff sentinel out
  * of the raw text. Throws `AiError` on any provider/network failure.
  */
-export async function generateReply(args: GenerateArgs): Promise<GenerateResult> {
+/**
+ * Raw completion from the account's configured provider — no handoff
+ * parsing. Used by non-reply tools (e.g. the conversation summarizer)
+ * that want the model's text verbatim. Throws `AiError` on failure.
+ */
+export async function generateRaw(args: GenerateArgs): Promise<string> {
   const { config, systemPrompt, messages } = args
   const timeoutMs = aiRequestTimeoutMs()
   const providerArgs = {
@@ -27,22 +32,21 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     timeoutMs,
   }
 
-  let raw: string
   switch (config.provider) {
     case 'openai':
-      raw = await generateOpenAi(providerArgs)
-      break
+      return generateOpenAi(providerArgs)
     case 'anthropic':
-      raw = await generateAnthropic(providerArgs)
-      break
+      return generateAnthropic(providerArgs)
     default:
       throw new AiError(`Unsupported AI provider: ${config.provider}`, {
         code: 'unsupported_provider',
         status: 400,
       })
   }
+}
 
-  return parseGeneration(raw)
+export async function generateReply(args: GenerateArgs): Promise<GenerateResult> {
+  return parseGeneration(await generateRaw(args))
 }
 
 /**

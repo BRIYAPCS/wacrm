@@ -16,9 +16,11 @@ import {
   Workflow,
   Play,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
@@ -32,6 +34,18 @@ import { format } from "date-fns";
 interface ContactSidebarProps {
   contact: Contact | null;
 }
+
+interface AiSummary {
+  summary: string;
+  sentiment: "positive" | "neutral" | "negative";
+  suggested_tags: string[];
+}
+
+const SENTIMENT_CLASS: Record<AiSummary["sentiment"], string> = {
+  positive: "border border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
+  neutral: "border border-border bg-muted text-muted-foreground",
+  negative: "border border-red-500/30 bg-red-500/10 text-red-400",
+};
 
 export function ContactSidebar({ contact }: ContactSidebarProps) {
   const { accountId, canSendMessages } = useAuth();
@@ -49,6 +63,18 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   >([]);
   const [flowsLoading, setFlowsLoading] = useState(false);
   const [runningFlowId, setRunningFlowId] = useState<string | null>(null);
+
+  // AI summary state.
+  const [summary, setSummary] = useState<AiSummary | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [applyingTag, setApplyingTag] = useState<string | null>(null);
+  const [appliedTags, setAppliedTags] = useState<Set<string>>(new Set());
+
+  // Clear a stale summary when the agent switches conversations.
+  useEffect(() => {
+    setSummary(null);
+    setAppliedTags(new Set());
+  }, [contact?.id]);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -130,6 +156,64 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     }
     setAddingNote(false);
   }, [contact, newNote, accountId]);
+
+  const handleSummarize = useCallback(async () => {
+    if (!contact) return;
+    setSummarizing(true);
+    try {
+      const res = await fetch("/api/ai/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contact_id: contact.id }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (d.code === "ai_not_configured") {
+          toast.error("AI isn't set up yet — enable it in AI Agents → Setup.");
+        } else {
+          toast.error(d.error || "Couldn't summarize this conversation");
+        }
+        return;
+      }
+      setSummary({
+        summary: d.summary,
+        sentiment: d.sentiment,
+        suggested_tags: d.suggested_tags ?? [],
+      });
+      setAppliedTags(new Set());
+    } catch {
+      toast.error("Could not reach the server");
+    } finally {
+      setSummarizing(false);
+    }
+  }, [contact]);
+
+  const handleApplyTag = useCallback(
+    async (name: string) => {
+      if (!contact) return;
+      setApplyingTag(name);
+      try {
+        const res = await fetch(`/api/contacts/${contact.id}/tags`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(d.error || "Couldn't apply tag");
+          return;
+        }
+        setAppliedTags((prev) => new Set(prev).add(name));
+        await fetchContactData(); // refresh the tag chips below
+        toast.success(`Tagged “${name}”`);
+      } catch {
+        toast.error("Could not reach the server");
+      } finally {
+        setApplyingTag(null);
+      }
+    },
+    [contact, fetchContactData],
+  );
 
   // Open the picker and (re)load the account's ACTIVE flows. Fetched on
   // open rather than on mount so browsing the inbox doesn't hit the API
@@ -218,6 +302,103 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               <p className="text-xs text-muted-foreground">{contact.company}</p>
             )}
           </div>
+
+          {/* AI summary */}
+          {canSendMessages && (
+            <div className="mt-4">
+              {!summary ? (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleSummarize}
+                  disabled={summarizing}
+                >
+                  {summarizing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  Summarize with AI
+                </Button>
+              ) : (
+                <div className="rounded-lg border border-border bg-muted/40 p-3 text-left">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+                      AI summary
+                    </span>
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10px] font-medium capitalize",
+                        SENTIMENT_CLASS[summary.sentiment],
+                      )}
+                    >
+                      {summary.sentiment}
+                    </span>
+                  </div>
+                  <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+                    {summary.summary}
+                  </p>
+                  {summary.suggested_tags.length > 0 && (
+                    <div className="mt-2">
+                      <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Suggested tags
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {summary.suggested_tags.map((t) => {
+                          const applied =
+                            appliedTags.has(t) ||
+                            tags.some(
+                              (tag) => tag.name.toLowerCase() === t.toLowerCase(),
+                            );
+                          return (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => handleApplyTag(t)}
+                              disabled={applied || applyingTag === t}
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
+                                applied
+                                  ? "border-border bg-muted text-muted-foreground"
+                                  : "border-primary/40 text-primary hover:bg-primary/10",
+                              )}
+                            >
+                              {applyingTag === t ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : applied ? (
+                                <Check className="h-3 w-3" />
+                              ) : (
+                                <Plus className="h-3 w-3" />
+                              )}
+                              {t}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-2 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleSummarize}
+                      disabled={summarizing}
+                      className="text-[10px] text-muted-foreground hover:text-foreground"
+                    >
+                      Regenerate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSummary(null)}
+                      className="text-[10px] text-muted-foreground hover:text-foreground"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Phone */}
           <div className="mt-4 space-y-2">
