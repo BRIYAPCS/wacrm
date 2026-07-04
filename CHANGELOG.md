@@ -9,6 +9,26 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.14.0] — 2026-07-04
+
+Adds **business hours** with an optional **away auto-reply**.
+
+### Added
+
+- **Business hours + away auto-reply.** Under **Settings → Business
+  hours** (admin+), set your timezone and a per-weekday open/close
+  schedule, and optionally an away message. When enabled, an inbound
+  message received outside your hours gets the away reply — once per
+  customer per closed period (throttled), and skipped when a flow or the
+  AI assistant already handles the message, so a closed-hours customer
+  gets one clear reply rather than two. The webhook evaluates the
+  schedule in your account timezone. Backed by
+  `/api/account/business-hours`.
+  **Migration required:** `supabase/migrations/037_business_hours.sql`
+  adds `accounts.timezone` / `business_hours` / `away_auto_reply_enabled`
+  / `away_message` and `conversations.away_replied_at`. Idempotent —
+  apply with `npm run db:deploy`.
+
 ## [0.13.0] — 2026-07-04
 
 Adds **internal notes with @mentions** — teammates collaborate inside a

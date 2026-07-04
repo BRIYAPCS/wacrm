@@ -9,6 +9,8 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { sendMessageToConversation } from '@/lib/whatsapp/send-message'
+import { isWithinBusinessHours, coerceBusinessHours } from '@/lib/business-hours'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -785,12 +787,28 @@ async function processMessage(
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }
 
-  // AI auto-reply. Runs only for plain-text inbound the deterministic
-  // flow runner did NOT consume (flows win over the LLM), and only when
-  // the account has enabled it. Awaited inside `after()` (same reason as
-  // the webhook dispatch below); `dispatchInboundToAiReply` owns its
-  // eligibility gates + try/catch and never throws.
+  // Away auto-reply (outside business hours). Runs only for plain-text
+  // inbound a flow didn't consume. When it fires we skip the AI reply
+  // below, so a closed-hours customer gets one clear "we're away"
+  // message rather than that plus an AI conversation.
+  let awaySent = false
   if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+    awaySent = await maybeSendAwayReply({
+      accountId,
+      conversationId: conversation.id,
+      awayRepliedAt:
+        (conversation as { away_replied_at?: string | null }).away_replied_at ??
+        null,
+    })
+  }
+
+  // AI auto-reply. Runs only for plain-text inbound the deterministic
+  // flow runner did NOT consume (flows win over the LLM), we didn't just
+  // send an away reply, and the account has enabled it. Awaited inside
+  // `after()` (same reason as the webhook dispatch below);
+  // `dispatchInboundToAiReply` owns its eligibility gates + try/catch and
+  // never throws.
+  if (!flowConsumed && !interactiveReplyId && inboundText.trim() && !awaySent) {
     await dispatchInboundToAiReply({
       accountId,
       conversationId: conversation.id,
@@ -1111,4 +1129,61 @@ async function maybeAutoAssign(
     .eq('id', conversationId)
 
   return agentId as string
+}
+
+const AWAY_REPLY_COOLDOWN_MS = 6 * 60 * 60 * 1000 // 6h — one greeting per closed period
+
+/**
+ * If the account is outside its business hours and has the away
+ * auto-reply enabled, send the away message once (throttled per
+ * conversation via `away_replied_at`). Returns true iff it sent — the
+ * caller then skips the AI auto-reply. Best-effort: never throws.
+ */
+async function maybeSendAwayReply(args: {
+  accountId: string
+  conversationId: string
+  awayRepliedAt: string | null
+}): Promise<boolean> {
+  const admin = supabaseAdmin()
+  const { data: acct } = await admin
+    .from('accounts')
+    .select('away_auto_reply_enabled, away_message, timezone, business_hours')
+    .eq('id', args.accountId)
+    .maybeSingle()
+  if (!acct?.away_auto_reply_enabled) return false
+
+  const hours = coerceBusinessHours(acct.business_hours)
+  // Open right now → nothing to do.
+  if (isWithinBusinessHours(hours, acct.timezone ?? 'UTC', new Date())) return false
+
+  // Throttle: don't re-greet within one closed period.
+  if (
+    args.awayRepliedAt &&
+    Date.now() - new Date(args.awayRepliedAt).getTime() < AWAY_REPLY_COOLDOWN_MS
+  ) {
+    return false
+  }
+
+  const message = (acct.away_message ?? '').trim()
+  if (!message) return false
+
+  try {
+    await sendMessageToConversation(admin, args.accountId, {
+      conversationId: args.conversationId,
+      messageType: 'text',
+      contentText: message,
+    })
+  } catch (err) {
+    console.error(
+      '[away-reply] send failed:',
+      err instanceof Error ? err.message : err,
+    )
+    return false
+  }
+
+  await admin
+    .from('conversations')
+    .update({ away_replied_at: new Date().toISOString() })
+    .eq('id', args.conversationId)
+  return true
 }
