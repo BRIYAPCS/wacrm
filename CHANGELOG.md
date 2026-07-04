@@ -9,6 +9,30 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.21.1] — 2026-07-04
+
+Deployment documentation + per-customer setup ergonomics. No migration, no
+app-code change.
+
+### Added
+
+- **`DEPLOYMENT.md`** — a complete, self-contained zero-to-live guide
+  (Supabase project, migrations, SMTP + Auth URLs for invites, WhatsApp
+  webhook, cron, domain, env reference, troubleshooting).
+- **`docs/new-customer-checklist.md`** — a tight copy-paste runbook for
+  redeploying the app as an isolated instance per customer, incl. which
+  secrets must never be reused across customers.
+- **`npm run setup`** (`scripts/setup.mjs`) — assisted first-run: scaffolds
+  `.env`, generates `ENCRYPTION_KEY` + `AUTOMATION_CRON_SECRET` (never
+  overwriting a real key), and reports which required values are missing.
+
+### Changed
+
+- Docs now reflect **invite-only, email-based** onboarding: `README`,
+  `docs/email-setup.md` (SMTP is effectively required), and
+  `docs/database-setup.md` updated; `.env.local.example` documents
+  `NEXT_PUBLIC_ALLOW_SIGNUP`.
+
 ## [0.21.0] — 2026-07-04
 
 Locks the instance to **invite-only sign-up** (Stage B). **Migration

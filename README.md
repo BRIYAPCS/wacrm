@@ -42,10 +42,11 @@ clone or fork it to run your own CRM.
   or semantic pgvector when an embeddings key is set).
 - **Real-time dashboard** — response times, daily volume, pipeline
   value, cross-module activity feed.
-- **Team accounts** — invite teammates by link, role-based access
-  (owner / admin / agent / viewer), ownership transfer. Every install
-  is account-scoped, so one shared inbox can be staffed by a whole
-  team. Solo use stays single-user with zero setup.
+- **Team accounts** — **invite-only** onboarding: the first user on a
+  fresh instance becomes the owner, and everyone else joins by **emailed
+  invitation** with role-based access (owner / admin / agent / viewer) and
+  ownership transfer. Random emails can't self-register (enforced in the
+  database). One shared, account-scoped inbox staffed by a whole team.
 - **Account management** — email, password, avatar, global sign-out.
 - **Public REST API** (`/api/v1`) with scoped, revocable API keys —
   build your own automations on top of your CRM. See
@@ -79,18 +80,25 @@ in an afternoon and make yours.
 git clone https://github.com/<your-username>/wacrm.git
 cd wacrm
 npm install
-cp .env.local.example .env.local   # fill in Supabase + Meta creds
-npm run db:deploy                  # apply all DB migrations → your Supabase project
+npm run setup       # scaffolds .env + generates ENCRYPTION_KEY/cron secret
+#                     then open .env and paste your Supabase + Meta creds
+npm run db:deploy   # apply all DB migrations → your Supabase project
 npm run dev
 ```
 
-`npm run db:deploy` applies every migration in `supabase/migrations/` to
-your database in one command (idempotent, re-runnable). It needs
-`SUPABASE_DB_URL` in your env — see
-[docs/database-setup.md](./docs/database-setup.md).
+`npm run setup` creates `.env`, generates the secrets you shouldn't
+hand-pick, and reports which values are still missing. `npm run db:deploy`
+then applies every migration in `supabase/migrations/` (idempotent,
+re-runnable) — it needs `SUPABASE_DB_URL`.
 
-Open <http://localhost:3000>. You'll be redirected to `/login` (or
-`/dashboard` if already signed in).
+Open <http://localhost:3000> → `/login`. The **first sign-up becomes the
+owner** (sign-up is invite-only thereafter).
+
+> **Standing up a real deployment — or a new customer instance?** Follow
+> **[DEPLOYMENT.md](./DEPLOYMENT.md)**: the complete, self-contained
+> zero-to-live guide (Supabase, migrations, SMTP for invites, WhatsApp,
+> cron, domain). Per-customer redeploys have a tight
+> [checklist](./docs/new-customer-checklist.md).
 
 ## 🚀 Deploy on Hostinger (recommended)
 
@@ -155,6 +163,8 @@ Key pages:
 - [Troubleshooting](https://wacrm.tech/docs/troubleshooting)
 
 Guides in this repo:
+- **[Deployment — zero to live](./DEPLOYMENT.md)** (start here for a real deploy)
+- [New-customer redeploy checklist](./docs/new-customer-checklist.md)
 - [Database setup & one-command deploy](./docs/database-setup.md)
 - [Automations, Flows & the cron scheduler](./docs/automations-and-cron.md)
 - [Email deliverability (custom SMTP)](./docs/email-setup.md)
