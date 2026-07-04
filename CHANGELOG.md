@@ -9,6 +9,17 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.19.5] — 2026-07-04
+
+### Fixed
+
+- **Scheduled messages no longer get silently stuck.** If a worker was
+  interrupted mid-send, the row could stay in `sending` forever — never
+  retried and never surfaced. The cron now reaps rows stuck in `sending`
+  for over 10 minutes and marks them **failed** (rather than re-queuing,
+  which could double-text a customer whose message already went out), so
+  the state is visible and can be rescheduled.
+
 ## [0.19.4] — 2026-07-04
 
 UI robustness — crash guards, error boundaries, and correctness fixes from

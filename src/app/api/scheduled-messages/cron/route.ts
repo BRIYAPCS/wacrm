@@ -23,11 +23,42 @@ interface DueRow {
   body: string;
 }
 
+// How long a row may sit in `sending` before the reaper treats it as
+// abandoned. Comfortably longer than a single tick's send work, so a
+// legitimately in-flight row is never reaped out from under a live worker.
+const STALE_SENDING_MS = 10 * 60 * 1000; // 10 minutes
+
 export async function GET(request: Request) {
   const denied = verifyCronSecret(request);
   if (denied) return denied;
 
   const admin = supabaseAdmin();
+
+  // Reaper: reclaim rows stuck in `sending`. If a worker died between
+  // claiming a row (pending → sending) and writing the terminal status, it
+  // would otherwise stay `sending` forever — never retried (the drain below
+  // only reads `pending`) and never surfaced. We mark such rows `failed`
+  // rather than re-queue them: the send may have already reached Meta
+  // before the crash, so retrying would risk double-texting the customer.
+  // The `updated_at` trigger stamps the claim time, so "stuck" = last
+  // touched more than STALE_SENDING_MS ago.
+  const staleBefore = new Date(Date.now() - STALE_SENDING_MS).toISOString();
+  const { data: reaped, error: reapErr } = await admin
+    .from("scheduled_messages")
+    .update({
+      status: "failed",
+      error:
+        "Send was interrupted (worker timed out) and not retried automatically to avoid a duplicate. Reschedule if the message didn't arrive.",
+    })
+    .eq("status", "sending")
+    .lt("updated_at", staleBefore)
+    .select("id");
+  const reapedCount = reaped?.length ?? 0;
+  if (reapErr) {
+    console.error("[scheduled-cron] reaper failed:", reapErr.message);
+  } else if (reapedCount > 0) {
+    console.warn(`[scheduled-cron] reaped ${reapedCount} stuck 'sending' row(s)`);
+  }
 
   const { data: due, error } = await admin
     .from("scheduled_messages")
@@ -41,7 +72,8 @@ export async function GET(request: Request) {
     console.error("[scheduled-cron] scan failed:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  if (!due || due.length === 0) return NextResponse.json({ sent: 0, failed: 0 });
+  if (!due || due.length === 0)
+    return NextResponse.json({ sent: 0, failed: 0, reaped: reapedCount });
 
   let sent = 0;
   let failed = 0;
@@ -84,5 +116,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ sent, failed });
+  return NextResponse.json({ sent, failed, reaped: reapedCount });
 }
