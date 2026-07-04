@@ -88,6 +88,7 @@ interface Member {
 
 interface Invitation {
   id: string;
+  email: string | null;
   role: 'admin' | 'agent' | 'viewer';
   label: string | null;
   created_at: string;
@@ -529,18 +530,18 @@ export function MembersTab() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">
-                            {inv.label || 'Untitled invite'}
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {inv.email || inv.label || 'Untitled invite'}
                           </span>
                           <span
-                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${inviteRoleMeta.className}`}
+                            className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${inviteRoleMeta.className}`}
                           >
                             <InviteRoleIcon className="size-3" />
                             {inviteRoleMeta.label}
                           </span>
                         </div>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          Created {fmtDate(inv.created_at)} · {fmtExpiresIn(inv.expires_at)}
+                          Emailed {fmtDate(inv.created_at)} · {fmtExpiresIn(inv.expires_at)}
                         </p>
                       </div>
 
