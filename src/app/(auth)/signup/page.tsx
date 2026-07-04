@@ -89,6 +89,38 @@ function SignupPageInner() {
     setLoading(false);
   };
 
+  // Invite-only instance (the default). Public sign-up is off unless the
+  // operator explicitly sets NEXT_PUBLIC_ALLOW_SIGNUP=true. The DB trigger
+  // (migration 045) enforces this regardless — this just avoids showing a
+  // form that would fail — so a random visitor gets a clear message.
+  if (process.env.NEXT_PUBLIC_ALLOW_SIGNUP !== "true") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md border-border bg-card">
+          <CardHeader className="items-center text-center">
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+              <UsersRound className="h-6 w-6 text-primary" />
+            </div>
+            <CardTitle>Invitation required</CardTitle>
+            <CardDescription>
+              This workspace is invite-only. Ask an admin to invite you —
+              you&rsquo;ll get an email with a link to set your password and
+              join the team.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center">
+            <Link
+              href="/login"
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              Already have an account? Log in
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (success) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
