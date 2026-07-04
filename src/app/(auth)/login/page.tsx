@@ -141,19 +141,27 @@ function LoginPageInner() {
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{" "}
-            <Link
-              href={
-                inviteToken
-                  ? `/signup?invite=${encodeURIComponent(inviteToken)}`
-                  : "/signup"
-              }
-              className="text-primary hover:text-primary/80"
-            >
-              Create account
-            </Link>
-          </p>
+          {/* Invite-only by default — hide the "create account" prompt
+              unless the operator has explicitly re-opened public sign-up. */}
+          {process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true" ? (
+            <p className="mt-6 text-center text-sm text-muted-foreground">
+              Don&apos;t have an account?{" "}
+              <Link
+                href={
+                  inviteToken
+                    ? `/signup?invite=${encodeURIComponent(inviteToken)}`
+                    : "/signup"
+                }
+                className="text-primary hover:text-primary/80"
+              >
+                Create account
+              </Link>
+            </p>
+          ) : (
+            <p className="mt-6 text-center text-xs text-muted-foreground">
+              Invite-only — ask an admin to send you an invitation.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

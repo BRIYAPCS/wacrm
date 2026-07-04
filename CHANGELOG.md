@@ -9,6 +9,35 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.21.0] — 2026-07-04
+
+Locks the instance to **invite-only sign-up** (Stage B). **Migration
+required:** apply `supabase/migrations/045_invite_only.sql`.
+
+### Changed
+
+- **Public sign-up is now off.** A random email can no longer self-register
+  — enforced at the database level (the sign-up trigger rejects it), so it
+  holds even against a direct API call, not just the hidden form. New
+  members join only via an admin email invitation (v0.20.0).
+- `/signup` shows an "invitation required" message, and the login page
+  drops the "create account" prompt.
+
+### No-lockout guarantees
+
+- **Invited users always get in**, and **the first user on a fresh deploy**
+  (an instance with no accounts yet) still bootstraps the workspace as owner
+  — so a new install works with no special steps.
+- Escape hatch — to temporarily re-open public sign-up:
+  `UPDATE app_settings SET public_signup_enabled = true;` (and set
+  `NEXT_PUBLIC_ALLOW_SIGNUP=true` to bring the form back).
+
+### Note
+
+- Adding teammates now depends on email invites, which need **SMTP
+  configured in your Supabase project** (see v0.20.0). Existing members
+  (including you) are unaffected — you keep your session and account.
+
 ## [0.20.0] — 2026-07-04
 
 Adds **invite teammates by email** (Stage A of invite-only onboarding).
