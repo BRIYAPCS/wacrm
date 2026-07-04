@@ -135,6 +135,7 @@ export function SettingsOverview({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberate: primitive user?.id keys the effect; depending on the full `user` object would refetch on every token refresh
   }, [user?.id, accountId, canManageMembers]);
 
   const displayName = profile?.full_name || profile?.email || 'Your account';

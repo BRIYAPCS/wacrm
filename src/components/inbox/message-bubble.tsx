@@ -107,6 +107,7 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   }
 
   return (
+    // eslint-disable-next-line @next/next/no-img-element -- user-sent media of arbitrary host + dimensions; next/image would need an open remotePatterns allowlist (image-proxy abuse vector)
     <img
       src={src ?? ""}
       alt={alt}
