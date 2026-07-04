@@ -9,6 +9,28 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.16.0] — 2026-07-04
+
+Adds a dedicated **Reports** page for analytics over time.
+
+**Migration required:** apply `supabase/migrations/038_account_report.sql`
+(adds the `account_report` aggregation function).
+
+### Added
+
+- **Reports page** (`/reports`, sidebar entry after Dashboard). Pick a
+  7 / 30 / 90-day window and see:
+  - **Summary tiles** — conversations started, new contacts, messages
+    received, messages sent, and average first-response time.
+  - **Message volume** — a per-day inbound-vs-outbound bar chart, bucketed
+    in the account's configured timezone.
+  - **Team performance** — a per-agent table of messages sent and
+    conversations handled in the range.
+- **`account_report` RPC.** All aggregation runs server-side in a single
+  `SECURITY DEFINER` function (membership-checked via `is_account_member`),
+  so totals stay accurate over long ranges instead of truncating at
+  PostgREST's 1000-row page cap. Backs `GET /api/reports?days=7|30|90`.
+
 ## [0.15.0] — 2026-07-04
 
 Adds **AI conversation summary** with sentiment and one-click tagging.
