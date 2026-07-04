@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, Pencil, RefreshCw, BookOpen } from 'lucide-react';
+import {
+  Loader2,
+  Trash2,
+  Pencil,
+  RefreshCw,
+  BookOpen,
+  Upload,
+  Globe,
+  FileText,
+  Type,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,11 +25,17 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 
+type SourceType = 'manual' | 'file' | 'url';
+
 interface DocSummary {
   id: string;
   title: string;
+  source_type: SourceType;
+  source_url: string | null;
   updated_at: string;
 }
+
+const ACCEPTED_FILES = '.pdf,.docx,.txt,.md,.csv,.tsv,.json,.html,.htm';
 
 /** Editor target: 'new' when creating, a doc id when editing, null when closed. */
 type EditTarget = 'new' | string | null;
@@ -40,6 +56,11 @@ export function AiKnowledgeCard({
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  // Add modes: 'file' upload and 'url' fetch, alongside the text editor.
+  const [addMode, setAddMode] = useState<'file' | 'url' | null>(null);
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const loadedAccountIdRef = useRef<string | null>(null);
 
   const fetchDocs = useCallback(async () => {
@@ -63,6 +84,7 @@ export function AiKnowledgeCard({
   }, [accountId, fetchDocs]);
 
   const openNew = () => {
+    setAddMode(null);
     setEditing('new');
     setTitle('');
     setContent('');
@@ -123,6 +145,62 @@ export function AiKnowledgeCard({
     }
   };
 
+  const uploadFile = async (file: File) => {
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/ai/knowledge/upload', {
+        method: 'POST',
+        body: fd,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.warning) toast.warning(data.warning);
+        else toast.success('Document added.');
+        setAddMode(null);
+        await fetchDocs();
+      } else {
+        toast.error(data.error ?? 'Upload failed.');
+      }
+    } catch {
+      toast.error('Upload failed.');
+    } finally {
+      setBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const addUrl = async () => {
+    const u = url.trim();
+    if (!u) {
+      toast.error('Enter a URL.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch('/api/ai/knowledge/url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: u }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.warning) toast.warning(data.warning);
+        else toast.success('Page added.');
+        setUrl('');
+        setAddMode(null);
+        await fetchDocs();
+      } else {
+        toast.error(data.error ?? 'Could not add that URL.');
+      }
+    } catch {
+      toast.error('Could not add that URL.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async (id: string) => {
     try {
       const res = await fetch(`/api/ai/knowledge/${id}`, { method: 'DELETE' });
@@ -162,9 +240,10 @@ export function AiKnowledgeCard({
           <BookOpen className="h-4 w-4 text-primary" /> Knowledge base
         </CardTitle>
         <CardDescription>
-          Add FAQs, policies, or product details. The assistant retrieves the
-          relevant pieces when drafting and auto-replying, so it can answer
-          instead of handing off.
+          Add FAQs, policies, or product details — type them, upload a
+          document (PDF, Word, TXT, CSV…), or paste a web page URL. The
+          assistant retrieves the relevant pieces when drafting and
+          auto-replying, so it can answer instead of handing off.
           {hasEmbeddingsKey
             ? ' Semantic search is on (embeddings key set).'
             : ' Using keyword search — add an embeddings key above for semantic search.'}
@@ -190,8 +269,29 @@ export function AiKnowledgeCard({
                     key={doc.id}
                     className="flex items-center justify-between gap-2 px-3 py-2"
                   >
-                    <span className="min-w-0 truncate text-sm text-foreground">
-                      {doc.title}
+                    <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+                      {doc.source_type === 'url' ? (
+                        <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      ) : doc.source_type === 'file' ? (
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <Type className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                      {doc.source_type === 'url' && doc.source_url ? (
+                        <a
+                          href={doc.source_url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="truncate hover:underline"
+                          title={doc.source_url}
+                        >
+                          {doc.title}
+                        </a>
+                      ) : (
+                        <span className="truncate" title={doc.title}>
+                          {doc.title}
+                        </span>
+                      )}
                     </span>
                     {canEdit && (
                       <span className="flex shrink-0 gap-1">
@@ -253,12 +353,74 @@ export function AiKnowledgeCard({
                   </Button>
                 </div>
               </div>
+            ) : addMode === 'url' ? (
+              <div className="space-y-3 rounded-md border border-border p-3">
+                <div className="space-y-2">
+                  <Label htmlFor="kb-url">Web page URL</Label>
+                  <Input
+                    id="kb-url"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !busy) void addUrl();
+                    }}
+                    placeholder="https://example.com/help/returns"
+                    disabled={busy}
+                    autoFocus
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    We fetch the page and extract its readable text. Private or
+                    local addresses are blocked.
+                  </p>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setAddMode(null);
+                      setUrl('');
+                    }}
+                    disabled={busy}
+                  >
+                    Cancel
+                  </Button>
+                  <Button onClick={() => void addUrl()} disabled={busy}>
+                    {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Fetch &amp; add
+                  </Button>
+                </div>
+              </div>
             ) : (
               canEdit && (
-                <div className="flex items-center justify-between">
-                  <Button variant="outline" size="sm" onClick={openNew}>
-                    <Plus className="mr-2 h-4 w-4" /> Add document
-                  </Button>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={openNew}>
+                      <Type className="mr-2 h-4 w-4" /> Add text
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={busy}
+                    >
+                      {busy ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="mr-2 h-4 w-4" />
+                      )}
+                      Upload file
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEditing(null);
+                        setAddMode('url');
+                      }}
+                    >
+                      <Globe className="mr-2 h-4 w-4" /> From URL
+                    </Button>
+                  </div>
                   {hasEmbeddingsKey && docs.length > 0 && (
                     <Button
                       variant="ghost"
@@ -278,6 +440,19 @@ export function AiKnowledgeCard({
                 </div>
               )
             )}
+
+            {/* Hidden picker — the "Upload file" button triggers it; the
+                file uploads immediately on selection. */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_FILES}
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void uploadFile(f);
+              }}
+            />
           </>
         )}
       </CardContent>

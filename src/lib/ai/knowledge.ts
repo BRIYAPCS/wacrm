@@ -1,7 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AiConfig } from './types'
+import { AiError, type AiConfig } from './types'
 import { chunkText } from './chunk'
 import { embedTexts, toVectorLiteral } from './embeddings'
+import { loadEmbeddingsKey } from './config'
+
+export type KnowledgeSourceType = 'manual' | 'file' | 'url'
 
 // ============================================================
 // Knowledge base: ingest (chunk + optionally embed) and hybrid
@@ -70,6 +73,56 @@ export async function ingestDocument(
   if (insErr) throw insErr
 
   if (embedError) throw embedError
+}
+
+/**
+ * Create a knowledge-base document from already-extracted text and index
+ * it. Shared by all three input paths (typed text, uploaded file, URL) so
+ * they store + chunk + embed identically. A failed embed doesn't fail the
+ * save — the document stays searchable lexically — so it's returned as a
+ * `warning` instead of throwing.
+ */
+export async function createAndIngestDocument(
+  db: SupabaseClient,
+  accountId: string,
+  userId: string,
+  args: {
+    title: string
+    content: string
+    sourceType?: KnowledgeSourceType
+    sourceUrl?: string | null
+  },
+): Promise<{ id: string; warning: string | null }> {
+  const { data: doc, error } = await db
+    .from('ai_knowledge_documents')
+    .insert({
+      account_id: accountId,
+      created_by: userId,
+      title: args.title.slice(0, 200),
+      content: args.content,
+      source_type: args.sourceType ?? 'manual',
+      source_url: args.sourceUrl ?? null,
+    })
+    .select('id')
+    .single()
+  if (error || !doc) throw error ?? new Error('Failed to save document')
+
+  const { key: embeddingsApiKey, corrupt } = await loadEmbeddingsKey(db, accountId)
+  let warning: string | null = null
+  try {
+    await ingestDocument(db, accountId, { embeddingsApiKey }, doc.id, args.content)
+  } catch (err) {
+    warning =
+      err instanceof AiError
+        ? `Saved, but semantic indexing failed (${err.message}). It's still searchable by keyword — use Reindex to retry.`
+        : 'Saved, but indexing failed. It’s still searchable by keyword.'
+    console.error('[knowledge] ingest error:', err)
+  }
+  if (!warning && corrupt) {
+    warning =
+      'Saved with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key).'
+  }
+  return { id: doc.id, warning }
 }
 
 /**
