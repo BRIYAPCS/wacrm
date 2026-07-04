@@ -39,6 +39,10 @@ function makeDb(script: Script): SupabaseClient {
       return builder;
     },
     eq: () => builder,
+    // resolveAccountConfig's last-resort fallback chains
+    // .order().order().limit().maybeSingle() — keep them chainable.
+    order: () => builder,
+    limit: () => builder,
     like: () => {
       const data = script.contactCandidatesByCall
         ? (script.contactCandidatesByCall[likeCalls] ?? [])

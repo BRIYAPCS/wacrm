@@ -23,6 +23,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
+import { resolveAccountConfig } from '@/lib/whatsapp/resolve-config';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
 
 export interface ResolvedConversation {
@@ -54,12 +55,10 @@ export async function resolveConversationByPhone(
   }
 
   // Fail fast (and create nothing) when the account has no WhatsApp
-  // connected — the same error the send would raise anyway.
-  const { data: config } = await db
-    .from('whatsapp_config')
-    .select('id')
-    .eq('account_id', accountId)
-    .maybeSingle();
+  // connected — the same error the send would raise anyway. Multi-number:
+  // an API send with no conversation context goes from the account
+  // default, which we stamp onto any conversation we create below.
+  const config = await resolveAccountConfig(db, accountId, { columns: 'id' });
   if (!config) {
     throw new SendMessageError(
       'whatsapp_not_configured',
@@ -156,6 +155,8 @@ export async function resolveConversationByPhone(
       account_id: accountId,
       user_id: ownerUserId,
       contact_id: contactId,
+      // Stamp the default number so the reply goes out from it.
+      whatsapp_config_id: config.id,
     })
     .select('id')
     .single();

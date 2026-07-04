@@ -12,6 +12,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
+import { resolveAccountConfig } from '@/lib/whatsapp/resolve-config';
 
 /** Row select that embeds the contact's tags for serialization. */
 export const CONTACT_SELECT = '*, contact_tags(tags(*))';
@@ -73,11 +74,12 @@ export async function resolveAuditUserId(
   db: SupabaseClient,
   accountId: string
 ): Promise<string> {
-  const { data: config } = await db
-    .from('whatsapp_config')
-    .select('user_id')
-    .eq('account_id', accountId)
-    .maybeSingle();
+  // Multi-number: pick the default number's owner (any config's owner is
+  // an equally valid audit user; resolveAccountConfig never throws on
+  // multiple rows the way .maybeSingle() would).
+  const config = await resolveAccountConfig(db, accountId, {
+    columns: 'user_id',
+  });
   const configOwner = config?.user_id as string | undefined;
   if (configOwner) return configOwner;
 

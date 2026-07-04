@@ -186,13 +186,16 @@ export default function InboxPage() {
         return;
       }
 
+      // Multi-number: the inbox is "connected" if ANY of the account's
+      // numbers is connected (maybeSingle would throw on 2+ rows).
       const { data } = await supabase
         .from("whatsapp_config")
-        .select("status")
+        .select("id")
         .eq("account_id", accountId)
-        .maybeSingle();
+        .eq("status", "connected")
+        .limit(1);
 
-      setWhatsappConnected(data?.status === "connected");
+      setWhatsappConnected((data?.length ?? 0) > 0);
     };
 
     checkConnection();

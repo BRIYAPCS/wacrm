@@ -11,6 +11,7 @@ import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
+import { WhatsAppNumbers } from '@/components/settings/whatsapp-numbers';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { CannedResponsesSettings } from '@/components/settings/canned-responses-settings';
 import { BusinessHoursSettings } from '@/components/settings/business-hours-settings';
@@ -57,7 +58,12 @@ export default function SettingsPage() {
     profile: <ProfileForm />,
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
-    whatsapp: <WhatsAppConfig />,
+    whatsapp: (
+      <div className="space-y-6">
+        <WhatsAppNumbers />
+        <WhatsAppConfig />
+      </div>
+    ),
     templates: <TemplateManager />,
     canned: <CannedResponsesSettings />,
     hours: <BusinessHoursSettings />,

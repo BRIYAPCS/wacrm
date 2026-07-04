@@ -95,16 +95,17 @@ export function WhatsAppConfig() {
   const fetchConfig = useCallback(async (acctId: string) => {
     setLoading(true);
     try {
-      // Load form values from Supabase (shows what's in DB).
-      // Switched from `user_id` (which would only match the row's
-      // original author) to `account_id` so every member of the
-      // account sees the same saved configuration. UNIQUE(account_id)
-      // on the table guarantees the .maybeSingle() return type
-      // remains accurate.
+      // Load form values from Supabase (shows what's in DB). Multi-number
+      // (migration 039): an account can have several numbers, so this form
+      // edits the DEFAULT one — guaranteed to be at most one row by the
+      // `uniq_default_config_per_account` partial index, keeping the
+      // .maybeSingle() return type accurate. The "Connected numbers"
+      // manager above handles the rest (add / rename / set-default / remove).
       const { data, error } = await supabase
         .from('whatsapp_config')
         .select('*')
         .eq('account_id', acctId)
+        .eq('is_default', true)
         .maybeSingle();
 
       if (error) {
@@ -180,6 +181,16 @@ export function WhatsAppConfig() {
     fetchConfig(accountId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberate: primitive user?.id keys the effect; depending on the full `user` object would refetch on every token refresh
   }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
+
+  // Re-hydrate when the multi-number manager above changes the default
+  // (or removes a number) — the form always edits the current default.
+  useEffect(() => {
+    const onChanged = () => {
+      if (accountId) fetchConfig(accountId);
+    };
+    window.addEventListener('wa-config-changed', onChanged);
+    return () => window.removeEventListener('wa-config-changed', onChanged);
+  }, [accountId, fetchConfig]);
 
   async function handleSave() {
     if (!phoneNumberId.trim()) {
@@ -268,6 +279,9 @@ export function WhatsAppConfig() {
       }
 
       if (accountId) await fetchConfig(accountId);
+      // Refresh the multi-number manager above — a save may have added a
+      // brand-new number to the account.
+      window.dispatchEvent(new Event('wa-config-changed'));
     } catch (err) {
       console.error('Save error:', err);
       toast.error('Failed to save configuration');
@@ -339,7 +353,12 @@ export function WhatsAppConfig() {
 
     try {
       setResetting(true);
-      const res = await fetch('/api/whatsapp/config', { method: 'DELETE' });
+      // Target the default number's row explicitly (multi-number: an
+      // id-less DELETE is refused when several numbers are connected).
+      const url = config?.id
+        ? `/api/whatsapp/config?id=${encodeURIComponent(config.id)}`
+        : '/api/whatsapp/config';
+      const res = await fetch(url, { method: 'DELETE' });
       const data = await res.json();
 
       if (!res.ok) {
@@ -348,6 +367,7 @@ export function WhatsAppConfig() {
       }
 
       toast.success('Configuration cleared. You can now re-enter your credentials.');
+      window.dispatchEvent(new Event('wa-config-changed'));
       setConfig(null);
       setPhoneNumberId('');
       setWabaId('');
