@@ -9,6 +9,28 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.18.0] — 2026-07-04
+
+Adds an **audit log** — a tamper-resistant record of sensitive account
+changes for owners and admins.
+
+**Migration required:** apply `supabase/migrations/040_audit_log.sql`
+(adds the `audit_logs` table + an admin-only read policy).
+
+### Added
+
+- **Audit log** (Settings → Audit log, admin+). A newest-first, paginated
+  trail of who did what, when. Instrumented actions:
+  - **Team** — role changed, member removed, invitation created/revoked,
+    ownership transferred.
+  - **WhatsApp numbers** — number added, removed, renamed, default changed.
+- **Tamper-resistant by design.** Rows are written server-side only (via
+  the service-role client); `audit_logs` has **no** insert/update/delete
+  policy, so a member session can neither forge nor erase history.
+  `actor_label` snapshots the actor's name at action time, so the trail
+  stays readable after someone leaves the account.
+- **`GET /api/account/audit`** — cursor-paginated (`?before=`), admin+.
+
 ## [0.17.0] — 2026-07-04
 
 Adds **multi-number support** — connect several WhatsApp numbers to one

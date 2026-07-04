@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { recordAudit } from "@/lib/audit/record";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -65,6 +66,14 @@ export async function DELETE(
         { status: 404 },
       );
     }
+
+    recordAudit({
+      accountId: ctx.accountId,
+      actorUserId: ctx.userId,
+      action: "invitation.revoked",
+      entityType: "invitation",
+      entityId: id,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

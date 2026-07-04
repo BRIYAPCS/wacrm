@@ -19,6 +19,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { isAccountRole } from "@/lib/auth/roles";
+import { recordAudit } from "@/lib/audit/record";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -88,6 +89,15 @@ export async function PATCH(
 
     if (error) return rpcErrorToResponse(error);
 
+    recordAudit({
+      accountId: ctx.accountId,
+      actorUserId: ctx.userId,
+      action: "member.role_changed",
+      entityType: "member",
+      entityId: userId,
+      metadata: { new_role: role },
+    });
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     return toErrorResponse(err);
@@ -114,6 +124,14 @@ export async function DELETE(
     });
 
     if (error) return rpcErrorToResponse(error);
+
+    recordAudit({
+      accountId: ctx.accountId,
+      actorUserId: ctx.userId,
+      action: "member.removed",
+      entityType: "member",
+      entityId: userId,
+    });
 
     return NextResponse.json({ ok: true, newPersonalAccountId: data });
   } catch (err) {

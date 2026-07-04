@@ -8,6 +8,7 @@ import {
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { resolveAccountConfig } from '@/lib/whatsapp/resolve-config'
+import { recordAudit } from '@/lib/audit/record'
 
 /**
  * Resolve the caller's account_id from their profile. Inlined here
@@ -408,6 +409,15 @@ export async function POST(request: Request) {
           { status: 500 }
         )
       }
+
+      recordAudit({
+        accountId,
+        actorUserId: user.id,
+        action: 'whatsapp_number.added',
+        entityType: 'whatsapp_config',
+        entityId: phone_number_id,
+        metadata: { phone_number_id, label: baseRow.label ?? null },
+      })
     }
 
     if (registrationError) {
@@ -538,6 +548,14 @@ export async function DELETE(request: Request) {
       }
     }
 
+    recordAudit({
+      accountId,
+      actorUserId: user.id,
+      action: 'whatsapp_number.removed',
+      entityType: 'whatsapp_config',
+      entityId: rowId,
+    })
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error in WhatsApp config DELETE:', error)
@@ -612,6 +630,19 @@ export async function PATCH(request: Request) {
     if (!updated) {
       return NextResponse.json({ error: 'Number not found' }, { status: 404 })
     }
+
+    recordAudit({
+      accountId,
+      actorUserId: user.id,
+      action:
+        update.is_default === true
+          ? 'whatsapp_number.default_changed'
+          : 'whatsapp_number.renamed',
+      entityType: 'whatsapp_config',
+      entityId: id,
+      metadata:
+        update.is_default === true ? {} : { label: update.label ?? null },
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {
