@@ -2,11 +2,17 @@
 
 wacrm sends transactional email through **Supabase Auth**:
 
+- **Team invitations** (`Settings → Team members → Invite`) — the primary
+  way members join. Sign-up is invite-only, so **without working email you
+  cannot add teammates.**
 - **Password reset** (`/forgot-password`)
 - **Email confirmation / magic links** (if you enable them)
 
-Team invites in wacrm are **link-based** (copy/paste a URL), so they do
-**not** depend on email — but password reset does.
+> Because onboarding is invite-only and invites are emailed, **custom SMTP
+> is effectively required**, not optional — set it up before handing an
+> instance to a customer. Also make sure your domain is in Supabase's
+> **Auth → URL Configuration → Redirect URLs** (a `https://your-domain/**`
+> wildcard) so the emailed `/accept-invite` link is trusted.
 
 ## Why you need custom SMTP for production
 

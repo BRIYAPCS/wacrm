@@ -82,11 +82,17 @@ just run it again — only the new ones apply.
 npm run dev      # http://localhost:3000
 ```
 
-Sign up at `/login` — the signup trigger creates your profile and
-account automatically. Everything except **inbound WhatsApp webhooks**
-works immediately. Those need Meta credentials (`META_APP_SECRET`,
-WhatsApp settings) which you can add later; nothing else is blocked by
-them.
+Sign up at `/login` — the **first user on a fresh instance becomes the
+owner** (sign-up is invite-only thereafter; the trigger creates the
+account + owner profile automatically). Everything except **inbound
+WhatsApp webhooks** works immediately. Those need Meta credentials
+(`META_APP_SECRET`, WhatsApp settings) which you can add later; nothing
+else is blocked by them.
+
+> Adding teammates is by **email invitation** (Settings → Team members),
+> which needs SMTP configured in your Supabase project — see
+> [email-setup.md](./email-setup.md) and
+> [../DEPLOYMENT.md](../DEPLOYMENT.md) Step 4.
 
 ## Troubleshooting
 
