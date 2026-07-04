@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -74,12 +74,22 @@ export function DealForm({
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Reset the form fields every time the sheet opens or its input
-  // props change. This is a legitimate prop-driven sync; the rule is
-  // over-cautious here, hence the block-level disable.
+  // Reset the form when the sheet OPENS or switches to a different deal —
+  // but NOT when defaultCurrency / stages / defaultStageId happen to change
+  // while it's already open (e.g. the currency setting resolving from its
+  // "USD" fallback), which would otherwise wipe the user's typed edits.
+  // The init key gates that: same open session + same deal → no re-reset.
+  const initKeyRef = useRef<string | null>(null);
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initKeyRef.current = null;
+      return;
+    }
+    const key = deal?.id ?? "new";
+    if (initKeyRef.current === key) return;
+    initKeyRef.current = key;
+
     setConfirmDelete(false);
     if (deal) {
       setTitle(deal.title);

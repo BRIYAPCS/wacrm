@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
@@ -55,6 +55,14 @@ export function ContactDetailView({
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
+  // True when the contact row came back empty (deleted mid-open, or RLS
+  // hid it) — so we show a "no longer available" message instead of an
+  // infinite spinner.
+  const [notFound, setNotFound] = useState(false);
+  // Monotonic token guarding against out-of-order fetches: a fast
+  // contact→contact switch must not let the earlier (slower) response
+  // paint stale data over the newer contact.
+  const reqRef = useRef(0);
   const [copiedPhone, setCopiedPhone] = useState(false);
 
   // Send template — lets the business initiate (or re-open) a conversation
@@ -91,96 +99,129 @@ export function ContactDetailView({
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loadingDeals, setLoadingDeals] = useState(false);
 
-  const fetchContact = useCallback(async () => {
-    if (!contactId) return;
-    setLoading(true);
+  // Each fetch takes an `isCurrent` guard so a stale in-flight response
+  // (from a previous contact) can't overwrite state after the user has
+  // switched. Standalone re-calls after a mutation pass nothing → the
+  // default guard always applies.
+  const fetchContact = useCallback(
+    async (isCurrent: () => boolean = () => true) => {
+      if (!contactId) return;
+      setLoading(true);
 
-    const { data } = await supabase
-      .from('contacts')
-      .select('*')
-      .eq('id', contactId)
-      .single();
-
-    if (data) {
-      setContact(data);
-      setEditName(data.name ?? '');
-      setEditPhone(data.phone);
-      setEditEmail(data.email ?? '');
-      setEditCompany(data.company ?? '');
-    }
-    setLoading(false);
-  }, [contactId, supabase]);
-
-  const fetchTags = useCallback(async () => {
-    if (!contactId) return;
-
-    const [tagsRes, contactTagsRes] = await Promise.all([
-      supabase.from('tags').select('*').order('name'),
-      supabase.from('contact_tags').select('tag_id').eq('contact_id', contactId),
-    ]);
-
-    if (tagsRes.data) setAllTags(tagsRes.data);
-    if (contactTagsRes.data) {
-      setContactTagIds(contactTagsRes.data.map((ct) => ct.tag_id));
-    }
-  }, [contactId, supabase]);
-
-  const fetchNotes = useCallback(async () => {
-    if (!contactId) return;
-    setLoadingNotes(true);
-
-    const { data } = await supabase
-      .from('contact_notes')
-      .select('*')
-      .eq('contact_id', contactId)
-      .order('created_at', { ascending: false });
-
-    if (data) setNotes(data);
-    setLoadingNotes(false);
-  }, [contactId, supabase]);
-
-  const fetchCustomFields = useCallback(async () => {
-    if (!contactId) return;
-    setLoadingCustom(true);
-
-    const [fieldsRes, valuesRes] = await Promise.all([
-      supabase.from('custom_fields').select('*').order('field_name'),
-      supabase
-        .from('contact_custom_values')
+      const { data } = await supabase
+        .from('contacts')
         .select('*')
-        .eq('contact_id', contactId),
-    ]);
+        .eq('id', contactId)
+        .single();
 
-    if (fieldsRes.data) setCustomFields(fieldsRes.data);
-    if (valuesRes.data) {
-      const map: Record<string, string> = {};
-      valuesRes.data.forEach((v) => {
-        map[v.custom_field_id] = v.value ?? '';
-      });
-      setCustomValues(map);
-    }
-    setLoadingCustom(false);
-  }, [contactId, supabase]);
+      if (!isCurrent()) return;
+      if (data) {
+        setContact(data);
+        setNotFound(false);
+        setEditName(data.name ?? '');
+        setEditPhone(data.phone);
+        setEditEmail(data.email ?? '');
+        setEditCompany(data.company ?? '');
+      } else {
+        // Deleted mid-open or hidden by RLS — surface it instead of
+        // spinning forever.
+        setContact(null);
+        setNotFound(true);
+      }
+      setLoading(false);
+    },
+    [contactId, supabase],
+  );
 
-  const fetchDeals = useCallback(async () => {
-    if (!contactId) return;
-    setLoadingDeals(true);
-    const { data } = await supabase
-      .from('deals')
-      .select('*, stage:pipeline_stages(*)')
-      .eq('contact_id', contactId)
-      .order('created_at', { ascending: false });
-    setDeals((data ?? []) as Deal[]);
-    setLoadingDeals(false);
-  }, [contactId, supabase]);
+  const fetchTags = useCallback(
+    async (isCurrent: () => boolean = () => true) => {
+      if (!contactId) return;
+
+      const [tagsRes, contactTagsRes] = await Promise.all([
+        supabase.from('tags').select('*').order('name'),
+        supabase.from('contact_tags').select('tag_id').eq('contact_id', contactId),
+      ]);
+
+      if (!isCurrent()) return;
+      if (tagsRes.data) setAllTags(tagsRes.data);
+      if (contactTagsRes.data) {
+        setContactTagIds(contactTagsRes.data.map((ct) => ct.tag_id));
+      }
+    },
+    [contactId, supabase],
+  );
+
+  const fetchNotes = useCallback(
+    async (isCurrent: () => boolean = () => true) => {
+      if (!contactId) return;
+      setLoadingNotes(true);
+
+      const { data } = await supabase
+        .from('contact_notes')
+        .select('*')
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false });
+
+      if (!isCurrent()) return;
+      if (data) setNotes(data);
+      setLoadingNotes(false);
+    },
+    [contactId, supabase],
+  );
+
+  const fetchCustomFields = useCallback(
+    async (isCurrent: () => boolean = () => true) => {
+      if (!contactId) return;
+      setLoadingCustom(true);
+
+      const [fieldsRes, valuesRes] = await Promise.all([
+        supabase.from('custom_fields').select('*').order('field_name'),
+        supabase
+          .from('contact_custom_values')
+          .select('*')
+          .eq('contact_id', contactId),
+      ]);
+
+      if (!isCurrent()) return;
+      if (fieldsRes.data) setCustomFields(fieldsRes.data);
+      if (valuesRes.data) {
+        const map: Record<string, string> = {};
+        valuesRes.data.forEach((v) => {
+          map[v.custom_field_id] = v.value ?? '';
+        });
+        setCustomValues(map);
+      }
+      setLoadingCustom(false);
+    },
+    [contactId, supabase],
+  );
+
+  const fetchDeals = useCallback(
+    async (isCurrent: () => boolean = () => true) => {
+      if (!contactId) return;
+      setLoadingDeals(true);
+      const { data } = await supabase
+        .from('deals')
+        .select('*, stage:pipeline_stages(*)')
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false });
+      if (!isCurrent()) return;
+      setDeals((data ?? []) as Deal[]);
+      setLoadingDeals(false);
+    },
+    [contactId, supabase],
+  );
 
   useEffect(() => {
     if (open && contactId) {
-      fetchContact();
-      fetchTags();
-      fetchNotes();
-      fetchCustomFields();
-      fetchDeals();
+      const token = ++reqRef.current;
+      const isCurrent = () => reqRef.current === token;
+      setNotFound(false);
+      fetchContact(isCurrent);
+      fetchTags(isCurrent);
+      fetchNotes(isCurrent);
+      fetchCustomFields(isCurrent);
+      fetchDeals(isCurrent);
     }
   }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchDeals]);
 
@@ -384,9 +425,20 @@ export function ContactDetailView({
         side="right"
         className="bg-popover border-border text-popover-foreground sm:max-w-lg w-full p-0"
       >
-        {loading || !contact ? (
+        {loading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="size-6 animate-spin text-primary" />
+          </div>
+        ) : !contact ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+            <p className="text-sm font-medium text-foreground">
+              {notFound ? 'Contact not available' : 'Nothing to show'}
+            </p>
+            <p className="max-w-xs text-xs text-muted-foreground">
+              {notFound
+                ? 'This contact may have been deleted or is no longer accessible.'
+                : 'Select a contact to see their details.'}
+            </p>
           </div>
         ) : (
           <div className="flex flex-col h-full">

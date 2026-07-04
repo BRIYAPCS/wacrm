@@ -155,7 +155,14 @@ export default function NotificationsPage() {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-2">
         <p className="text-sm text-destructive">{error}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>
+        <Button
+          variant="outline"
+          onClick={() => {
+            // Soft retry — refetch in place instead of hard-reloading the app.
+            setError(null);
+            load();
+          }}
+        >
           Retry
         </Button>
       </div>
