@@ -68,6 +68,41 @@ export function ConversationList({
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
 
+  // Server-backed search (message full-text + contact fields) spanning
+  // ALL conversations, not just the loaded page. Debounced.
+  const [serverResults, setServerResults] = useState<
+    { conversation: Conversation; snippet: string | null }[]
+  >([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 2) {
+      setServerResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, {
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const d = (await res.json()) as {
+            results: { conversation: Conversation; snippet: string | null }[];
+          };
+          setServerResults(d.results ?? []);
+        }
+      } catch {
+        // Non-fatal — the search simply shows no server matches.
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
   // depended on `onConversationsLoaded`, which depends on the parent's
@@ -213,6 +248,7 @@ export function ConversationList({
   );
 
   const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
+  const searchMode = search.trim().length >= 2;
 
   return (
     // w-full on mobile so the list occupies the whole viewport when it's
@@ -226,7 +262,7 @@ export function ConversationList({
           <Input
             value={search}
             onChange={handleSearchChange}
-            placeholder="Search conversations..."
+            placeholder="Search messages & contacts..."
             className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
           />
         </div>
@@ -396,6 +432,31 @@ export function ConversationList({
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
+        ) : searchMode ? (
+          searching && serverResults.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              Searching…
+            </div>
+          ) : serverResults.length === 0 ? (
+            <div className="px-4 py-12 text-center">
+              <p className="text-sm text-muted-foreground">
+                No conversations or messages match “{search.trim()}”.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              {serverResults.map(({ conversation, snippet }) => (
+                <ConversationItem
+                  key={conversation.id}
+                  conversation={conversation}
+                  isActive={conversation.id === activeConversationId}
+                  onSelect={handleSelect}
+                  snippet={snippet}
+                />
+              ))}
+            </div>
+          )
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">
             <p className="text-sm text-muted-foreground">No conversations found</p>
@@ -421,12 +482,16 @@ interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  /** When set (search results), shown as the preview instead of the last
+   *  message — the excerpt of the message that matched the query. */
+  snippet?: string | null;
 }
 
 function ConversationItem({
   conversation,
   isActive,
   onSelect,
+  snippet,
 }: ConversationItemProps) {
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || "Unknown";
@@ -474,7 +539,7 @@ function ConversationItem({
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <p className="truncate text-xs text-muted-foreground">
-            {conversation.last_message_text || "No messages yet"}
+            {snippet || conversation.last_message_text || "No messages yet"}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
             {conversation.unread_count > 0 && (

@@ -9,6 +9,23 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.11.0] — 2026-07-04
+
+Adds **full-text search** across your conversations.
+
+### Added
+
+- **Inbox search.** The conversation-list search box now searches *every*
+  conversation in the account — by **message content** (Postgres
+  full-text) and by **contact** name / phone / company / email — not just
+  the currently-loaded list. Results show the matching message excerpt and
+  open the conversation on click. Runs under the caller's RLS, so tenancy
+  is enforced by the existing policies. Backed by `GET /api/search`.
+  **Migration required:** `supabase/migrations/034_message_search.sql`
+  adds a generated `fts` tsvector + GIN index on `messages`. Idempotent —
+  apply with `npm run db:deploy` (the stored column backfills existing
+  rows once).
+
 ## [0.10.0] — 2026-07-04
 
 Adds **scheduled messages (send-later)** — compose a message now and have
