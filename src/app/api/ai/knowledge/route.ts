@@ -5,9 +5,7 @@ import {
   toErrorResponse,
 } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { loadEmbeddingsKey } from '@/lib/ai/config'
-import { ingestDocument } from '@/lib/ai/knowledge'
-import { AiError } from '@/lib/ai/types'
+import { createAndIngestDocument } from '@/lib/ai/knowledge'
 
 /**
  * GET /api/ai/knowledge
@@ -19,7 +17,7 @@ export async function GET() {
     const { supabase, accountId } = await getCurrentAccount()
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, updated_at')
+      .select('id, title, source_type, source_url, updated_at')
       .eq('account_id', accountId)
       .order('updated_at', { ascending: false })
     if (error) {
@@ -57,53 +55,13 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: doc, error } = await supabase
-      .from('ai_knowledge_documents')
-      .insert({ account_id: accountId, created_by: userId, title, content })
-      .select('id')
-      .single()
-    if (error || !doc) {
-      console.error('[ai/knowledge POST] insert error:', error)
-      return NextResponse.json(
-        { error: 'Failed to save document' },
-        { status: 500 },
-      )
-    }
-
-    const { key: embeddingsApiKey, corrupt } = await loadEmbeddingsKey(
+    const { id, warning } = await createAndIngestDocument(
       supabase,
       accountId,
+      userId,
+      { title, content, sourceType: 'manual' },
     )
-    try {
-      await ingestDocument(
-        supabase,
-        accountId,
-        { embeddingsApiKey },
-        doc.id,
-        content,
-      )
-    } catch (err) {
-      const message = err instanceof AiError ? err.message : 'indexing failed'
-      console.error('[ai/knowledge POST] ingest error:', err)
-      return NextResponse.json(
-        {
-          success: true,
-          id: doc.id,
-          warning: `Saved, but semantic indexing failed (${message}). Lexical search still works; use Reindex to retry.`,
-        },
-        { status: 200 },
-      )
-    }
-
-    if (corrupt) {
-      return NextResponse.json({
-        success: true,
-        id: doc.id,
-        warning:
-          'Saved with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key).',
-      })
-    }
-    return NextResponse.json({ success: true, id: doc.id })
+    return NextResponse.json({ success: true, id, warning })
   } catch (err) {
     return toErrorResponse(err)
   }

@@ -9,6 +9,35 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.23.0] — 2026-07-04
+
+Feed the AI knowledge base from **documents and websites**, not just typed
+text. **Migration required:** apply
+`supabase/migrations/047_ai_knowledge_sources.sql`.
+
+### Added
+
+- **Upload documents** in Settings → AI → Knowledge: PDF, Word (`.docx`),
+  and plain text (`.txt`, `.md`, `.csv`, `.tsv`, `.json`, `.html`). The
+  server extracts the readable text and indexes it like any other entry.
+- **Add a website by URL** — the server fetches the page (or a linked PDF /
+  text file), extracts its readable content, and adds it to the knowledge
+  base so the assistant can draw on it. The fetch is SSRF-guarded
+  (private / reserved / cloud-metadata hosts are refused).
+- Knowledge entries now show a **source badge** (typed / file / website),
+  and website entries link back to their original URL.
+
+### Notes
+
+- Uploads and URL fetches are capped (10 MB / ~500k characters) to bound
+  cost and abuse.
+- Scanned / image-only PDFs can't be read (no OCR); you'll get a clear
+  message to paste the text instead.
+- Whether an entry is searched semantically or by keyword still depends on
+  your embeddings key — a failed or missing key saves the entry as
+  keyword-searchable with a warning, exactly as before.
+- New dependencies: `unpdf` (PDF text) and `mammoth` (DOCX text).
+
 ## [0.22.0] — 2026-07-04
 
 The AI assistant now works with **any provider**. **Migration required:**
