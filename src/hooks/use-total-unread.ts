@@ -4,10 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Conversation } from "@/types";
 
+// Monotonic per-subscription suffix. This hook is mounted in more than one
+// place at once (the sidebar nav badge AND the header notification bell), so
+// a FIXED channel topic would collide: Supabase returns the same channel
+// instance for a given topic, and adding `postgres_changes` listeners to an
+// already-`subscribe()`d channel throws. A unique topic per mount keeps the
+// subscriptions independent.
+let channelSeq = 0;
+
 /**
  * Count of conversations with at least one unread inbound message for
- * the current user. Used by the sidebar to surface a green dot on the
- * Inbox nav entry when the user is elsewhere in the app.
+ * the current user. Used by the sidebar (Inbox nav dot) and the header
+ * notification bell.
  *
  * Lives on its own realtime channel (distinct from the inbox page's
  * "inbox-realtime") so both can coexist without sharing state.
@@ -43,7 +51,7 @@ export function useTotalUnread(): number {
     })();
 
     const channel = supabase
-      .channel("total-unread-realtime")
+      .channel(`total-unread-realtime-${++channelSeq}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "conversations" },

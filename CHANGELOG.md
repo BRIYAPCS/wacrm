@@ -9,6 +9,17 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.25.1] — 2026-07-04
+
+### Fixed
+
+- Inbox crashed with "cannot add `postgres_changes` callbacks … after
+  `subscribe()`" after the notification bell landed: the bell and the
+  sidebar both mount the unread-count hooks, and their **fixed** realtime
+  channel topics collided (Supabase reuses one channel instance per
+  topic). Each subscription now uses a unique channel name, so the hooks
+  can mount in multiple places at once.
+
 ## [0.25.0] — 2026-07-04
 
 Live **notification bell** in the app header. No migration.

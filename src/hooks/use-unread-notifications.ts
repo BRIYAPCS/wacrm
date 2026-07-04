@@ -4,9 +4,15 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Notification } from "@/types";
 
+// Unique per-subscription suffix — this hook mounts in both the sidebar and
+// the header notification bell at once, and a shared channel topic would
+// collide (Supabase reuses the channel instance for a given topic, and you
+// can't add listeners after `subscribe()`). See use-total-unread for detail.
+let channelSeq = 0;
+
 /**
- * Count of unread notifications for the current user. Used by the
- * sidebar to surface a badge on the Notifications nav entry.
+ * Count of unread notifications for the current user. Used by the sidebar
+ * (Notifications nav badge) and the header notification bell.
  *
  * RLS on `notifications` already scopes every read to `auth.uid() =
  * user_id`, so no explicit filter is needed here — same pattern as
@@ -31,7 +37,7 @@ export function useUnreadNotifications(): number {
     })();
 
     const channel = supabase
-      .channel("notifications-unread-count")
+      .channel(`notifications-unread-count-${++channelSeq}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "notifications" },
