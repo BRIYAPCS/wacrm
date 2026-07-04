@@ -16,6 +16,10 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
+import { canSendMessages, type AccountRole } from '@/lib/auth/roles'
+
+/** Hard cap on recipients per single broadcast call (matches the v1 core). */
+const MAX_RECIPIENTS = 1000
 
 interface BroadcastResult {
   phone: string
@@ -86,13 +90,22 @@ export async function POST(request: Request) {
     // by a teammate.
     const { data: profile } = await supabase
       .from('profiles')
-      .select('account_id')
+      .select('account_id, account_role')
       .eq('user_id', user.id)
       .maybeSingle()
     const accountId = profile?.account_id as string | undefined
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+    // This route sends straight to Meta with no DB write, so RLS never
+    // gets a chance to enforce anything — a read-only viewer would
+    // otherwise be able to blast templates. Gate on agent+ explicitly.
+    if (!profile?.account_role || !canSendMessages(profile.account_role as AccountRole)) {
+      return NextResponse.json(
+        { error: 'Your role does not permit sending broadcasts.' },
         { status: 403 },
       )
     }
@@ -125,6 +138,15 @@ export async function POST(request: Request) {
             'Provide either `recipients` (preferred) or `phone_numbers` — must be a non-empty array',
         },
         { status: 400 }
+      )
+    }
+
+    // Bound the synchronous Meta fan-out so one request can't be turned
+    // into thousands of outbound sends (cost / resource abuse).
+    if (recipients.length > MAX_RECIPIENTS) {
+      return NextResponse.json(
+        { error: `Too many recipients — max ${MAX_RECIPIENTS} per broadcast.` },
+        { status: 400 },
       )
     }
 

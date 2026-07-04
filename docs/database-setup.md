@@ -61,12 +61,12 @@ You'll see each migration applied in order:
   ▶  001_initial_schema.sql … done
   ▶  002_pipelines_enhancements.sql … done
   …
-✓ Database up to date — 30 migration(s) applied, 0 already present.
+✓ Database up to date — 49 migration(s) applied, 0 already present.
 ```
 
 That's the entire database: all tables, RLS policies, the `avatars` /
-`chat-media` / `flow-media` storage buckets, functions, triggers, and
-the realtime publication.
+`chat-media` / `flow-media` / `chat-backgrounds` storage buckets,
+functions, triggers, and the realtime publication.
 
 ## Re-running
 

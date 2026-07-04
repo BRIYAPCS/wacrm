@@ -171,6 +171,7 @@ Key pages:
 - [Troubleshooting](https://wacrm.tech/docs/troubleshooting)
 
 Guides in this repo:
+- **[Features overview](./docs/features.md)** — everything the app does, by module
 - **[Deployment — zero to live](./DEPLOYMENT.md)** (start here for a real deploy)
 - [New-customer redeploy checklist](./docs/new-customer-checklist.md)
 - [Database setup & one-command deploy](./docs/database-setup.md)

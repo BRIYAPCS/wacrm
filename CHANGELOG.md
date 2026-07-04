@@ -9,6 +9,40 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.25.3] — 2026-07-04
+
+Security + correctness fixes from a full-app audit. **Migration required:**
+apply `supabase/migrations/049_security_hardening.sql`.
+
+### Security
+
+- **Critical — account-takeover via signup metadata (fixed).** The signup
+  trigger attached a new user to the `invited_account_id` / role carried in
+  client-supplied signup metadata without proving an invite existed, so
+  anyone could self-register as **admin of any account**. The invited path
+  is now gated on `auth.users.invited_at`, which only a service-role admin
+  invite can set — a forged public signup can no longer attach to another
+  account.
+- **Two internal database functions (`record_webhook_failure`,
+  `claim_ai_reply_slot`) were callable with the public anon key**, letting
+  anyone disable an account's webhooks or silence its AI auto-replies.
+  They're now restricted to the service role.
+- **Read-only viewers could send.** The dashboard send / react / broadcast
+  routes now enforce **agent-or-above** (they call Meta before any
+  RLS-checked write, so RLS alone didn't stop a viewer). Broadcasts also
+  gained a **1,000-recipient cap** per request.
+
+### Fixed
+
+- **Unread badge could undercount** under concurrent inbound messages for
+  one contact (a read-modify-write race); the increment is now atomic.
+- **Failed / in-flight outbound bubbles no longer vanish** when a customer
+  reply arrives — an inbound message no longer clears the agent's pending
+  optimistic messages, and failed sends are always kept for retry.
+- **Runaway automation guard**: a misconfigured looping flow is now capped
+  at 10 outbound messages per dispatch (was up to ~64) to prevent
+  customer spam from a cyclic graph.
+
 ## [0.25.2] — 2026-07-04
 
 Hardening + responsiveness pass from a full-app review. No migration.

@@ -219,11 +219,19 @@ export default function InboxPage() {
           setMessages((prev) => {
             // Avoid duplicates
             if (prev.some((m) => m.id === newMsg.id)) return prev;
-            // Replace optimistic message if it exists
-            const withoutOptimistic = prev.filter(
-              (m) => !m.id.startsWith("temp-")
-            );
-            return [...withoutOptimistic, newMsg];
+            // Only an OUTBOUND real row confirms an optimistic send — clear
+            // the pending temp bubbles then. An inbound customer message
+            // must NOT remove the agent's in-flight/failed bubbles (that
+            // made failed sends silently vanish when a reply arrived).
+            // Failed temps are always kept so the agent can see/retry them.
+            const isOutbound =
+              newMsg.sender_type === "agent" || newMsg.sender_type === "bot";
+            const cleaned = isOutbound
+              ? prev.filter(
+                  (m) => !(m.id.startsWith("temp-") && m.status !== "failed"),
+                )
+              : prev;
+            return [...cleaned, newMsg];
           });
         }
 

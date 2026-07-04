@@ -746,16 +746,17 @@ async function processMessage(
     return
   }
 
-  // Update conversation
-  const { error: convError } = await supabaseAdmin()
-    .from('conversations')
-    .update({
-      last_message_text: contentText || `[${message.type}]`,
-      last_message_at: new Date().toISOString(),
-      unread_count: (conversation.unread_count || 0) + 1,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', conversation.id)
+  // Update conversation. Use an atomic RPC for the unread_count bump —
+  // a client-side read-modify-write (read N, write N+1) loses increments
+  // when two inbound webhooks for the same contact land concurrently.
+  const { error: convError } = await supabaseAdmin().rpc(
+    'bump_conversation_on_inbound',
+    {
+      p_conversation_id: conversation.id,
+      p_last_text: contentText || `[${message.type}]`,
+      p_last_at: new Date().toISOString(),
+    },
+  )
 
   if (convError) {
     console.error('Error updating conversation:', convError)
