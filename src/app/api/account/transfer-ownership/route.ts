@@ -22,6 +22,7 @@ import { NextResponse } from "next/server";
 import type { PostgrestError } from "@supabase/supabase-js";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { recordAudit } from "@/lib/audit/record";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -86,6 +87,15 @@ export async function POST(request: Request) {
     });
 
     if (error) return rpcErrorToResponse(error);
+
+    recordAudit({
+      accountId: ctx.accountId,
+      actorUserId: ctx.userId,
+      action: "ownership.transferred",
+      entityType: "member",
+      entityId: newOwnerUserId,
+      metadata: { to_user_id: newOwnerUserId },
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

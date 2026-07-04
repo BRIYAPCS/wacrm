@@ -27,6 +27,7 @@ import {
   inviteUrl,
 } from "@/lib/auth/invitations";
 import { isAccountRole } from "@/lib/auth/roles";
+import { recordAudit } from "@/lib/audit/record";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -236,6 +237,15 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+
+    recordAudit({
+      accountId: ctx.accountId,
+      actorUserId: ctx.userId,
+      action: "invitation.created",
+      entityType: "invitation",
+      entityId: data.id,
+      metadata: { role, label },
+    });
 
     return NextResponse.json(
       {
