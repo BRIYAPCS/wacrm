@@ -43,6 +43,9 @@ interface AccountSummary {
   /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
    *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
   default_currency: string;
+  /** Account-wide chat-background token (migration 048); null = the
+   *  built-in doodle. Applied in the inbox and as the per-chat fallback. */
+  inbox_background: string | null;
 }
 
 interface AuthContextValue {
@@ -171,7 +174,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .from("accounts")
             // default_currency added in migration 021; narrowed to the
             // USD fallback below for older schemas where it reads null.
-            .select("id, name, default_currency")
+            // inbox_background added in migration 048.
+            .select("id, name, default_currency, inbox_background")
             .eq("id", data.account_id)
             .maybeSingle();
           if (accountErr) {
@@ -186,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: account.id,
               name: account.name,
               default_currency: account.default_currency ?? DEFAULT_CURRENCY,
+              inbox_background: account.inbox_background ?? null,
             };
           }
         }

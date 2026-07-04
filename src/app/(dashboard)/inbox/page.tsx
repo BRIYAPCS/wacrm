@@ -527,6 +527,22 @@ export default function InboxPage() {
     [activeConversation]
   );
 
+  const handleBackgroundChange = useCallback(
+    (conversationId: string, background: string | null) => {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId ? { ...c, background } : c,
+        ),
+      );
+      if (activeConversation?.id === conversationId) {
+        setActiveConversation((prev) =>
+          prev ? { ...prev, background } : prev,
+        );
+      }
+    },
+    [activeConversation],
+  );
+
   const handleAssignChange = useCallback(
     (conversationId: string, assignedAgentId: string | null) => {
       setConversations((prev) =>
@@ -611,6 +627,7 @@ export default function InboxPage() {
             onUpdateMessage={handleUpdateMessage}
             onStatusChange={handleStatusChange}
             onAssignChange={handleAssignChange}
+            onBackgroundChange={handleBackgroundChange}
             onBack={handleCloseConversation}
             resyncToken={resyncToken}
             onRefresh={handleManualRefresh}
