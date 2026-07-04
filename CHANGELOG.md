@@ -9,6 +9,17 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.19.6] — 2026-07-04
+
+### Fixed
+
+- **Flow builder: deleting a connection now works on the canvas.** Edges
+  are derived from node config and had no way to hold a "selected" state,
+  so clicking an edge and pressing Delete/Backspace did nothing. Edge
+  selection is now tracked and fed back into the canvas, so a selected
+  connection highlights and the Delete key clears it (same behavior nodes
+  already had).
+
 ## [0.19.5] — 2026-07-04
 
 ### Fixed

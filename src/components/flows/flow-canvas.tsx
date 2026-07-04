@@ -53,6 +53,7 @@ import {
   type Node as RfNode,
   type Edge as RfEdge,
   type NodeChange,
+  type EdgeChange,
   type NodeProps,
   type OnNodeDrag,
 } from '@xyflow/react';
@@ -287,6 +288,12 @@ function FlowCanvasInner() {
   // list view's analogue is the per-card expanded set in
   // flow-builder.tsx.
   const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(null);
+  // Edges are DERIVED from node config (a plain memo, not local state), so
+  // unlike nodes they have no place to record React Flow's ephemeral
+  // "selected" flag. Without it an edge can never stay selected and the
+  // Delete key never removes a connection. We track the selected edge here
+  // and feed it back into the derived edges below.
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const selectedNode = useMemo(
     () =>
       selectedNodeKey
@@ -365,6 +372,9 @@ function FlowCanvasInner() {
       target: e.target,
       sourceHandle: e.sourceHandle,
       label: e.label,
+      // Reflect selection back into the controlled edges so a clicked edge
+      // stays highlighted and the Delete key can remove it.
+      selected: e.id === selectedEdgeId,
       // Mode-aware via CSS tokens so edge chrome flips with light/dark.
       labelStyle: { fill: 'var(--muted-foreground)', fontSize: 11 },
       labelBgStyle: { fill: 'var(--card)' },
@@ -374,7 +384,21 @@ function FlowCanvasInner() {
     }));
 
     return rfEdges;
-  }, [builderNodes]);
+  }, [builderNodes, selectedEdgeId]);
+
+  // Apply React Flow's edge selection changes to our own state (edges are
+  // derived, so there's no applyEdgeChanges pipeline like nodes have). A
+  // 'select' change is the click; keeping it here is what lets the edge
+  // stay selected long enough for the Delete key to fire onEdgesDelete.
+  const handleEdgesChange = useCallback((changes: EdgeChange<RfEdge>[]) => {
+    setSelectedEdgeId((prev) => {
+      let next = prev;
+      for (const ch of changes) {
+        if (ch.type === 'select') next = ch.selected ? ch.id : next === ch.id ? null : next;
+      }
+      return next;
+    });
+  }, []);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<RfNode<NodeData>>[]) => {
@@ -480,6 +504,9 @@ function FlowCanvasInner() {
         const patch = applyEdgeConnection(sourceNode, e.sourceHandle, '');
         if (patch) updateNodeConfig(e.source, patch);
       }
+      // The deleted edge is gone from the derived set; drop the stale
+      // selection so nothing points at a non-existent edge.
+      setSelectedEdgeId(null);
     },
     [builderNodes, updateNodeConfig]
   );
@@ -525,6 +552,7 @@ function FlowCanvasInner() {
           fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
           proOptions={{ hideAttribution: true }}
           onNodesChange={handleNodesChange}
+          onEdgesChange={handleEdgesChange}
           onNodeDragStop={handleNodeDragStop}
           onNodeClick={handleNodeClick}
           onConnect={handleConnect}
