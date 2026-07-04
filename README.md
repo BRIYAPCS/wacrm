@@ -33,13 +33,18 @@ clone or fork it to run your own CRM.
 - **No-code automations** — triggers on inbound messages, new
   contacts, keywords, or schedule; conditional branches, waits,
   tags, webhooks. Visual builder.
-- **AI reply assistant** — bring your own OpenAI or Anthropic key
-  (stored encrypted; no per-seat AI fee, your data stays yours).
+- **AI reply assistant** — bring your own key for **any provider**:
+  OpenAI, Anthropic, Google Gemini, Azure OpenAI, OpenRouter, Groq,
+  DeepSeek, Mistral, Together, xAI, Zhipu GLM, or a **self-hosted /
+  OpenAI-compatible** endpoint (Ollama, LM Studio, vLLM…). Keys are
+  stored encrypted — no per-seat AI fee, your data stays yours.
   One-click AI-drafted replies in the inbox, plus an optional
   auto-reply bot with a per-conversation cap and clean human handoff.
-  Add a **knowledge base** (FAQs, policies, product docs) and it
-  answers from your own content — hybrid retrieval (Postgres full-text,
-  or semantic pgvector when an embeddings key is set).
+  Add a **knowledge base** and it answers from your own content —
+  typed FAQs/policies, **uploaded documents** (PDF, Word, text), or a
+  **website URL** the server reads for you. Hybrid retrieval (Postgres
+  full-text, or semantic pgvector when an embeddings key is set). See
+  [docs/ai-assistant.md](./docs/ai-assistant.md).
 - **Real-time dashboard** — response times, daily volume, pipeline
   value, cross-module activity feed.
 - **Team accounts** — **invite-only** onboarding: the first user on a
@@ -166,6 +171,7 @@ Guides in this repo:
 - **[Deployment — zero to live](./DEPLOYMENT.md)** (start here for a real deploy)
 - [New-customer redeploy checklist](./docs/new-customer-checklist.md)
 - [Database setup & one-command deploy](./docs/database-setup.md)
+- [AI assistant — providers & knowledge base](./docs/ai-assistant.md)
 - [Automations, Flows & the cron scheduler](./docs/automations-and-cron.md)
 - [Email deliverability (custom SMTP)](./docs/email-setup.md)
 - [Public REST API](./docs/public-api.md)
