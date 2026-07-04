@@ -9,6 +9,85 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.8.0] — 2026-07-03
+
+Operational hardening + Flows completion. Adds one-command database
+deployment, self-service account deletion, a committed cron scheduler,
+and finishes the Flows feature (input validation + manual run). Also
+migrates to the Next.js 16 `proxy` convention.
+
+### Added
+
+- **One-command database deploy.** `npm run db:deploy` applies every
+  `supabase/migrations/*.sql` in order to your project's Postgres,
+  tracked in a `wacrm_schema_migrations` table so re-runs skip
+  already-applied files. Reads `SUPABASE_DB_URL` (Supabase Session
+  pooler) from `.env`. See
+  [docs/database-setup.md](./docs/database-setup.md).
+- **Account deletion (GDPR).** Owners can permanently delete the whole
+  account from **Settings → Team members → Danger zone** — a
+  type-the-name confirmation that removes all account data and every
+  member's login. Backed by `DELETE /api/account`.
+  **Migration required:** `031` (below).
+- **Manual “Run a flow”.** Agents can launch any active flow for a
+  contact from the inbox contact panel — the `manual` trigger is now
+  usable end-to-end. Backed by `POST /api/flows/[id]/run` (agent+,
+  rate-limited).
+- **`collect_input` validation.** A collect-input flow node can now
+  require the customer's reply to be an **email / phone number / custom
+  regex**; a reply that fails is reprompted per the flow's fallback
+  policy instead of advancing. Configured in the builder, enforced by
+  the runner, and checked at save time.
+- **Committed cron scheduler.** `.github/workflows/cron.yml` drives the
+  automation Wait-step and flow-timeout endpoints every 5 minutes from
+  GitHub's cloud — host-agnostic (works on Hostinger, Vercel, Railway, a
+  VPS). Set `BASE_URL` + `CRON_SECRET` under the repo's **Settings →
+  Secrets and variables → Actions** after deploying. See
+  [docs/automations-and-cron.md](./docs/automations-and-cron.md).
+- **Self-host docs in-repo.**
+  [database-setup](./docs/database-setup.md),
+  [automations-and-cron](./docs/automations-and-cron.md), and
+  [email-setup](./docs/email-setup.md) (custom SMTP for password-reset
+  email).
+
+### Changed
+
+- **`middleware.ts` → `proxy.ts`** — Next.js 16 renamed the file
+  convention (`middleware` is deprecated). Same behaviour: session
+  refresh + auth gating.
+- **Cron auth is host-agnostic.** `/api/automations/cron` and
+  `/api/flows/cron` accept the shared secret via `x-cron-secret` **or**
+  `Authorization: Bearer` (Vercel Cron), through one constant-time
+  `verifyCronSecret` helper — which also upgrades
+  `/api/automations/cron` from a timing-unsafe compare.
+
+### Fixed
+
+- **Deleting an account owner no longer fails.**
+  `accounts.owner_user_id` was `ON DELETE RESTRICT` — the only foreign
+  key to `auth.users` that blocked deleting an owner (every signup
+  creates an owned account), surfacing as an opaque error from the
+  Supabase admin API. Switched to `ON DELETE CASCADE` so account/user
+  deletion tears the tenant down cleanly. Part of migration `031`.
+- **Timezone-flaky dashboard tests.** The `date-utils` tests built dates
+  from UTC-parsed strings while the code reads the local day; switched
+  to local `Date` construction so they pass in any timezone.
+
+### Performance
+
+- **Covering indexes for every foreign key** (migration `031`).
+  Previously-unindexed FKs made cascade deletes sequential-scan ~two
+  dozen tables — now that account deletion cascades tenant-wide, each FK
+  has a supporting index.
+
+### Migration required
+
+- `supabase/migrations/031_fk_indexes_and_account_cascade.sql` — adds
+  covering indexes on every previously-unindexed foreign key and
+  switches `accounts.owner_user_id` from `RESTRICT` to `ON DELETE
+  CASCADE`. Idempotent. Apply with `npm run db:deploy` (or the Supabase
+  SQL editor) before deploying this version.
+
 ## [0.7.0] — 2026-07-02
 
 Promotes the AI assistant to a first-class **AI Agents** section in the
