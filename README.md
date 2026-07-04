@@ -47,6 +47,9 @@ clone or fork it to run your own CRM.
   [docs/ai-assistant.md](./docs/ai-assistant.md).
 - **Real-time dashboard** — response times, daily volume, pipeline
   value, cross-module activity feed.
+- **Live notification bell** — a header badge that updates in real time
+  for new messages and app alerts (assignments, @mentions), with a
+  quick-jump dropdown to the relevant chat.
 - **Team accounts** — **invite-only** onboarding: the first user on a
   fresh instance becomes the owner, and everyone else joins by **emailed
   invitation** with role-based access (owner / admin / agent / viewer) and
