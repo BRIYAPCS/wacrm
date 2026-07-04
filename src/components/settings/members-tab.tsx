@@ -74,6 +74,7 @@ import {
 import { InviteMemberDialog } from './invite-member-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
 import { DangerZone } from './danger-zone';
+import { AutoAssignCard } from './auto-assign-card';
 import { ROLE_META } from './role-meta';
 
 interface Member {
@@ -293,6 +294,10 @@ export function MembersTab() {
           </RequireRole>
         }
       />
+
+      <RequireRole min="admin">
+        <AutoAssignCard />
+      </RequireRole>
 
       {/* Live presence summary across the roster. Updates without a
           full refresh as heartbeats and the local re-derive tick land. */}

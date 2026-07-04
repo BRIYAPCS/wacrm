@@ -9,6 +9,25 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.12.0] — 2026-07-04
+
+Adds **round-robin auto-assignment** — new inbound conversations are
+distributed across your team automatically.
+
+### Added
+
+- **Auto-assignment.** Turn it on under **Settings → Team members**
+  (admin+) and each brand-new inbound conversation is assigned to the
+  next agent in rotation, so nothing sits unclaimed. Choose who's in the
+  rotation per member. The pick is an atomic, concurrency-safe database
+  function that locks the account row, so two simultaneous inbound
+  messages can't hand the same slot to two agents. Backed by
+  `/api/account/auto-assign`.
+  **Migration required:** `supabase/migrations/035_auto_assignment.sql`
+  adds `accounts.auto_assign_enabled` + a rotation cursor,
+  `profiles.assignable`, and the `assign_next_agent` RPC. Idempotent —
+  apply with `npm run db:deploy`.
+
 ## [0.11.0] — 2026-07-04
 
 Adds **full-text search** across your conversations.

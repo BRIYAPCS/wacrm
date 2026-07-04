@@ -1064,5 +1064,51 @@ async function findOrCreateConversation(
     return null
   }
 
-  return { conversation: newConv, created: true }
+  // Round-robin auto-assignment — only for brand-new inbound
+  // conversations, and only when the account has it enabled. Best-effort:
+  // a failure here must never drop the inbound message.
+  const assignedAgentId = await maybeAutoAssign(accountId, newConv.id)
+
+  return {
+    conversation: assignedAgentId
+      ? { ...newConv, assigned_agent_id: assignedAgentId }
+      : newConv,
+    created: true,
+  }
+}
+
+/**
+ * If the account has auto-assignment enabled, atomically pick the next
+ * agent in rotation (via the `assign_next_agent` RPC) and set them as the
+ * conversation's assignee. Returns the assigned agent's user_id, or null
+ * when auto-assign is off or there are no assignable agents.
+ */
+async function maybeAutoAssign(
+  accountId: string,
+  conversationId: string,
+): Promise<string | null> {
+  const admin = supabaseAdmin()
+
+  const { data: acct } = await admin
+    .from('accounts')
+    .select('auto_assign_enabled')
+    .eq('id', accountId)
+    .maybeSingle()
+  if (!acct?.auto_assign_enabled) return null
+
+  const { data: agentId, error } = await admin.rpc('assign_next_agent', {
+    p_account_id: accountId,
+  })
+  if (error) {
+    console.error('[auto-assign] rpc error:', error.message)
+    return null
+  }
+  if (!agentId) return null
+
+  await admin
+    .from('conversations')
+    .update({ assigned_agent_id: agentId })
+    .eq('id', conversationId)
+
+  return agentId as string
 }
