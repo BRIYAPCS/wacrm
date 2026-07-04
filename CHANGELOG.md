@@ -9,6 +9,35 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.19.3] — 2026-07-04
+
+Inbound data-integrity hardening (from a deep review). **Migration
+required:** apply `supabase/migrations/042_inbound_integrity.sql`.
+
+### Fixed
+
+- **Duplicate WhatsApp messages / double-processing on redelivery.** Meta
+  delivers webhooks at-least-once; a redelivered inbound could insert a
+  duplicate bubble, double-count unread, and re-fire automations, flows,
+  and the AI auto-reply (customer double-texted). A new unique index on
+  `messages (conversation_id, message_id)` plus idempotent handling now
+  make redeliveries a no-op.
+- **Duplicate conversation threads / inbox fragmentation.** There was no
+  unique key on `conversations (account_id, contact_id)`, so a race or a
+  contact merge could create a second thread for one contact — after which
+  every future inbound spawned yet another thread. Added the unique index
+  (with a one-time cleanup that collapses any existing duplicates) and
+  race-recovery in all find-or-create paths.
+- **Inbox checkmarks could go backwards.** Out-of-order Meta status
+  webhooks (a late "sent" after "delivered"/"read") regressed a message's
+  stored status. Status changes are now forward-only, matching the
+  broadcast side.
+- **Automation side effects could be dropped on serverless.** The webhook's
+  automation dispatch was fire-and-forget; it's now awaited inside
+  `after()` so a frozen function can't lose the work.
+- A throwing message in a batched webhook no longer aborts the rest; the
+  away auto-reply no longer pauses an active flow.
+
 ## [0.19.2] — 2026-07-04
 
 Performance. **Migration required:** apply

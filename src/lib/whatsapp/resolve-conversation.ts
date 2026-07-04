@@ -162,6 +162,20 @@ export async function resolveConversationByPhone(
     .single();
 
   if (convErr || !newConv) {
+    // Lost a race against a concurrent inbound/API create — the unique
+    // index (account_id, contact_id) from migration 042 rejected the
+    // duplicate. Re-resolve the winner rather than failing the send.
+    if (isUniqueViolation(convErr)) {
+      const { data: raced } = await db
+        .from('conversations')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('contact_id', contactId)
+        .single();
+      if (raced?.id) {
+        return { conversationId: raced.id, contactId, contactCreated };
+      }
+    }
     console.error('[resolve-conversation] conversation create error:', convErr);
     throw new SendMessageError(
       'db_error',
