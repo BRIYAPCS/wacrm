@@ -9,6 +9,23 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.19.2] — 2026-07-04
+
+Performance. **Migration required:** apply
+`supabase/migrations/041_performance_indexes.sql`.
+
+### Performance
+
+- **Faster inbox and message threads at scale.** Added composite indexes
+  matching the two hottest queries' filter + sort:
+  `conversations (account_id, last_message_at DESC)` and
+  `messages (conversation_id, created_at)`. Previously Postgres index-
+  scanned the filter and then did a separate in-memory sort on every
+  inbox load and every thread open; the composite indexes supply the
+  order directly, removing the sort step (verified with `EXPLAIN` — the
+  `Sort` node disappears). The messages index also speeds the Reports
+  aggregation. Purely additive; no behavior change.
+
 ## [0.19.1] — 2026-07-04
 
 Fixes from a full-app review (functionality + responsiveness). No migration.
