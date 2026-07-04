@@ -20,6 +20,15 @@ import {
   isAccountRole,
   type AccountRole,
 } from "@/lib/auth/roles";
+import {
+  effectiveTier,
+  parseOverrides,
+  resolveEntitlements,
+  hasFeature as entHasFeature,
+  limitFor as entLimitFor,
+  type Entitlements,
+} from "@/lib/plans/entitlements";
+import type { FeatureKey, LimitKey } from "@/lib/plans/catalog";
 
 interface Profile {
   id: string;
@@ -46,6 +55,10 @@ interface AccountSummary {
   /** Account-wide chat-background token (migration 048); null = the
    *  built-in doodle. Applied in the inbox and as the per-chat fallback. */
   inbox_background: string | null;
+  /** Subscription tier (migration 050); null = defer to instance default. */
+  plan: string | null;
+  /** Per-account entitlement overrides (migration 050); jsonb. */
+  plan_overrides: unknown;
 }
 
 interface AuthContextValue {
@@ -105,6 +118,18 @@ interface AuthContextValue {
   canEditSettings: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+
+  // ----------------------------------------------------------
+  // Plan entitlements (migration 050). COSMETIC only — the server
+  // re-resolves and enforces on every request. Use these to hide/lock
+  // gated UI and show upsells, never as a security boundary.
+  // ----------------------------------------------------------
+  /** Resolved plan entitlements for the current account. */
+  entitlements: Entitlements;
+  /** True if the account's plan includes a feature module. */
+  hasFeature: (feature: FeatureKey) => boolean;
+  /** Numeric limit for a key (`-1` = unlimited). */
+  limitFor: (key: LimitKey) => number;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -174,8 +199,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .from("accounts")
             // default_currency added in migration 021; narrowed to the
             // USD fallback below for older schemas where it reads null.
-            // inbox_background added in migration 048.
-            .select("id, name, default_currency, inbox_background")
+            // inbox_background added in migration 048; plan/overrides 050.
+            .select("id, name, default_currency, inbox_background, plan, plan_overrides")
             .eq("id", data.account_id)
             .maybeSingle();
           if (accountErr) {
@@ -191,6 +216,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               name: account.name,
               default_currency: account.default_currency ?? DEFAULT_CURRENCY,
               inbox_background: account.inbox_background ?? null,
+              plan: (account as { plan?: string | null }).plan ?? null,
+              plan_overrides:
+                (account as { plan_overrides?: unknown }).plan_overrides ?? {},
             };
           }
         }
@@ -338,6 +366,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [profile?.account_role, profile?.account_id]);
 
+  // Resolve plan entitlements from the account tier (or the per-instance
+  // NEXT_PUBLIC_DEFAULT_PLAN when null) + overrides. Cosmetic only — the
+  // server is authoritative; this drives nav locks / upsells.
+  const entitlements = useMemo(
+    () =>
+      resolveEntitlements(
+        effectiveTier(account?.plan ?? null, process.env.NEXT_PUBLIC_DEFAULT_PLAN ?? null),
+        parseOverrides(account?.plan_overrides),
+      ),
+    [account?.plan, account?.plan_overrides],
+  );
+  const hasFeature = useCallback(
+    (feature: FeatureKey) => entHasFeature(entitlements, feature),
+    [entitlements],
+  );
+  const limitFor = useCallback(
+    (key: LimitKey) => entLimitFor(entitlements, key),
+    [entitlements],
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -349,6 +397,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refreshProfile,
         account,
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
+        entitlements,
+        hasFeature,
+        limitFor,
         ...derived,
       }}
     >
@@ -388,6 +439,10 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      // Fail-closed: no account context → the lowest tier, no add-ons.
+      entitlements: resolveEntitlements("basic", null),
+      hasFeature: () => false,
+      limitFor: () => 0,
     };
   }
   return ctx;
