@@ -75,6 +75,14 @@ export interface SendMessageParams {
   /** Structured template params (header/body/buttons). */
   templateMessageParams?: unknown;
   replyToMessageId?: string | null;
+  /**
+   * The human agent who sent this, when there is one (dashboard sends).
+   * Persisted to `messages.sender_id` so per-agent reporting can attribute
+   * it. Leave null for automated sends (AI/away/API) — those are agent
+   * messages with no specific human author and are excluded from
+   * per-agent activity.
+   */
+  senderId?: string | null;
 }
 
 export interface SendMessageResult {
@@ -176,6 +184,7 @@ export async function sendMessageToConversation(
     templateParams,
     templateMessageParams,
     replyToMessageId,
+    senderId,
   } = params;
 
   if (!conversationId) {
@@ -409,6 +418,9 @@ export async function sendMessageToConversation(
     .insert({
       conversation_id: conversationId,
       sender_type: 'agent',
+      // The human agent who sent it (dashboard). Null for automated agent
+      // sends; per-agent reporting counts only non-null attributions.
+      sender_id: senderId || null,
       content_type: messageType,
       content_text: contentText || null,
       media_url: mediaUrl || null,

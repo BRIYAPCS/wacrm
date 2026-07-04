@@ -18,6 +18,14 @@ import {
 const NAME_MAX = 40;
 const DEFAULT_TAG_COLOR = "#3b82f6";
 
+// Escape LIKE/ILIKE metacharacters so a tag name containing `%` or `_`
+// (e.g. "50%", "a_b") is matched literally rather than as a wildcard —
+// otherwise the dedupe lookup could match the wrong existing tag or miss
+// the real duplicate. Backslash first so we don't double-escape.
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -48,7 +56,7 @@ export async function POST(
       .from("tags")
       .select("id, name, color")
       .eq("account_id", ctx.accountId)
-      .ilike("name", name)
+      .ilike("name", escapeLike(name))
       .maybeSingle();
 
     let tag = existing as { id: string; name: string; color: string } | null;

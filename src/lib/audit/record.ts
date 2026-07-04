@@ -16,6 +16,7 @@
 // from their profile so the trail stays readable after they leave.
 // ============================================================
 
+import { after } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 // Lazy service-role client (same pattern as the webhook). Avoids a
@@ -45,10 +46,26 @@ export interface AuditEvent {
 }
 
 /**
- * Write an audit entry. Never throws — resolves to void. Not awaited by
- * callers in practice, but returns the promise so tests can await it.
+ * Write an audit entry. Never throws.
+ *
+ * Callers invoke this WITHOUT awaiting (auditing must never block or fail
+ * the audited action). To make that durable on serverless — where the
+ * function can be frozen the moment the response is sent, dropping a
+ * floating promise's DB write — we hand the insert to `after()`, which
+ * keeps the invocation alive until it completes (same guarantee the
+ * inbound webhook relies on). Outside a request context (e.g. unit tests)
+ * `after()` throws, so we fall back to running inline.
  */
-export async function recordAudit(event: AuditEvent): Promise<void> {
+export function recordAudit(event: AuditEvent): void {
+  try {
+    after(() => writeAudit(event));
+  } catch {
+    // No request context (tests / scripts) — best-effort inline.
+    void writeAudit(event);
+  }
+}
+
+async function writeAudit(event: AuditEvent): Promise<void> {
   try {
     let actorLabel = event.actorLabel ?? null;
     if (!actorLabel && event.actorUserId) {

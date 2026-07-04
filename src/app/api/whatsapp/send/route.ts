@@ -181,6 +181,8 @@ export async function POST(request: Request) {
         templateParams: template_params,
         templateMessageParams: template_message_params,
         replyToMessageId: reply_to_message_id,
+        // Attribute the send to the human agent for per-agent reporting.
+        senderId: user.id,
       })
 
       return NextResponse.json({

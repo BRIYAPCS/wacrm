@@ -9,6 +9,33 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.19.1] — 2026-07-04
+
+Fixes from a full-app review (functionality + responsiveness). No migration.
+
+### Fixed
+
+- **Reports → Team Performance was always zero.** Agent sends never wrote
+  `messages.sender_id`, so the per-agent breakdown counted nothing. Human
+  (dashboard) sends now record the sender, so messages-sent and
+  conversations-handled populate correctly going forward. (Automated
+  AI/away/API sends stay unattributed by design.)
+- **Audit-log entries could be silently dropped on serverless.** Writes
+  were fire-and-forget, so the function could freeze before the insert
+  landed. `recordAudit` now hands the write to `after()`, matching the
+  inbound webhook's durability guarantee.
+- **Tag-apply matched tag names as SQL `LIKE` patterns.** A name with `%`
+  or `_` (e.g. "50%") could attach the wrong tag or create a duplicate;
+  names are now matched literally.
+- **Contact details were unreachable in the inbox on phones/tablets.** The
+  contact panel (tags, deals, notes) was desktop-only with no way in below
+  `lg`. The thread header now has a contact-info button that opens the
+  panel in a drawer on small screens.
+- **Tall dialogs could clip on short/landscape screens.** The base dialog
+  now caps its height and scrolls instead of overflowing the viewport.
+- **Contacts page header buttons could overflow on narrow phones** — they
+  now wrap.
+
 ## [0.19.0] — 2026-07-04
 
 Makes wacrm an **installable PWA** — add it to a phone or desktop home

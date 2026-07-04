@@ -12,6 +12,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +56,9 @@ export default function InboxPage() {
    * below reconciles to the stored value right after mount instead.
    */
   const [contactPanelOpen, setContactPanelOpen] = useState(true);
+  // Mobile/tablet (<lg) contact-info drawer — the sidebar can't sit beside
+  // the thread on narrow screens, so it opens in a Sheet instead.
+  const [mobileContactOpen, setMobileContactOpen] = useState(false);
   useEffect(() => {
     try {
       const stored = localStorage.getItem(CONTACT_PANEL_STORAGE_KEY);
@@ -612,6 +616,7 @@ export default function InboxPage() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            onOpenContactInfo={() => setMobileContactOpen(true)}
           />
         </div>
 
@@ -625,6 +630,22 @@ export default function InboxPage() {
           </div>
         )}
       </div>
+
+      {/* Contact info on mobile/tablet — a right-side drawer, since the
+          panel can't sit beside the thread below lg. Opened by the
+          thread header's contact-info button. */}
+      <Sheet open={mobileContactOpen} onOpenChange={setMobileContactOpen}>
+        <SheetContent
+          side="right"
+          className="w-[88%] max-w-sm overflow-y-auto p-0 lg:hidden"
+        >
+          <SheetTitle className="sr-only">Contact details</SheetTitle>
+          <ContactSidebar
+            contact={activeContact}
+            className="w-full border-l-0"
+          />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
