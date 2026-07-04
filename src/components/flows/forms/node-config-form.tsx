@@ -49,6 +49,23 @@ import { uploadAccountMedia, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media"
 import { slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
 
+/**
+ * Next stable reply id for a button/row. Uses the highest existing numeric
+ * suffix + 1 rather than the list length — length-based ids collide after
+ * a middle item is deleted (delete btn_2 from [btn_1,btn_2,btn_3] then add
+ * → "btn_3" again), which duplicates React keys, duplicates the canvas
+ * <Handle id>, and makes edge-wiring patch two branches at once.
+ */
+function nextReplyId(existingIds: string[], prefix: string): string {
+  const re = new RegExp(`^${prefix}(\\d+)$`);
+  let max = 0;
+  for (const id of existingIds) {
+    const m = id.match(re);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `${prefix}${max + 1}`;
+}
+
 interface NodeConfigFormProps {
   node: BuilderNode;
   allNodes: BuilderNode[];
@@ -281,7 +298,10 @@ function SendButtonsForm({
       buttons: [
         ...buttons,
         {
-          reply_id: `btn_${buttons.length + 1}`,
+          reply_id: nextReplyId(
+            buttons.map((b) => b.reply_id),
+            "btn_",
+          ),
           title: "Option",
           next_node_key: "",
         },
@@ -425,11 +445,13 @@ function SendListForm({
         {
           title: "",
           rows: [
-            {
-              reply_id: `row_${totalRows + 1}`,
-              title: `Option ${totalRows + 1}`,
-              next_node_key: "",
-            },
+            (() => {
+              const id = nextReplyId(
+                sections.flatMap((s) => s.rows.map((r) => r.reply_id)),
+                "row_",
+              );
+              return { reply_id: id, title: id.replace("row_", "Option "), next_node_key: "" };
+            })(),
           ],
         },
       ],
@@ -462,11 +484,17 @@ function SendListForm({
               ...s,
               rows: [
                 ...s.rows,
-                {
-                  reply_id: `row_${totalRows + 1}`,
-                  title: `Option ${totalRows + 1}`,
-                  next_node_key: "",
-                },
+                (() => {
+                  const id = nextReplyId(
+                    sections.flatMap((sec) => sec.rows.map((r) => r.reply_id)),
+                    "row_",
+                  );
+                  return {
+                    reply_id: id,
+                    title: id.replace("row_", "Option "),
+                    next_node_key: "",
+                  };
+                })(),
               ],
             }
           : s,

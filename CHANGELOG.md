@@ -9,6 +9,42 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.19.4] — 2026-07-04
+
+UI robustness — crash guards, error boundaries, and correctness fixes from
+the deep review. No migration.
+
+### Added
+
+- **Error boundaries + 404.** A crash in any page now shows a friendly
+  "something went wrong / try again" panel (the dashboard one keeps the
+  sidebar) instead of a white screen, plus a styled **404** page and a
+  dependency-free root-level fallback for the rare root-layout error.
+
+### Fixed
+
+- **New accounts now get their default "Sales Pipeline".** The one-shot
+  seed guard was consumed before the account id loaded, so brand-new users
+  were stranded on the empty state permanently.
+- **Broadcast review shows the real recipient count for custom-field
+  audiences** (it previously said "0 contacts" while actually sending to
+  the matches). The review now uses the exact same resolver as the send.
+- **"Verify with Meta" no longer white-screens** on an expired session or
+  server error.
+- **Deleting the last contacts on a page** no longer strands you on an
+  empty list — it steps back a page.
+- **Dashboard chart** no longer flashes a skeleton over already-loaded data
+  when switching back to a cached range, and no longer crashes if the
+  pointer is over it while the range shrinks.
+- **Flow builder**: button/list-row ids are now collision-proof (deleting a
+  middle item then adding one could previously duplicate an id and mis-wire
+  branches); unknown node types render a safe placeholder instead of
+  crashing; creating a flow no longer double-submits on Enter.
+- **Broadcast audience estimate** is debounced and guarded, so typing a
+  filter value no longer spams queries or shows a stale count.
+- **Notifications realtime** is now account-filtered and re-subscribes on
+  account switch.
+
 ## [0.19.3] — 2026-07-04
 
 Inbound data-integrity hardening (from a deep review). **Migration

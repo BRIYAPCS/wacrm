@@ -145,7 +145,13 @@ export default function PipelinesPage() {
       setLoading(true);
       let list = await loadPipelines();
 
-      if (list.length === 0 && !seedAttempted.current) {
+      // Gate on `accountId`: on first mount the profile is still loading and
+      // accountId is null, so seedDefaultPipeline would no-op. Consuming the
+      // one-shot guard there would permanently block the seed for brand-new
+      // accounts (the effect re-runs when accountId resolves, but the guard
+      // is already spent). Only attempt — and consume the guard — once we
+      // actually have an accountId to insert against.
+      if (list.length === 0 && !seedAttempted.current && accountId) {
         seedAttempted.current = true;
         const seeded = await seedDefaultPipeline();
         if (seeded) list = await loadPipelines();
@@ -165,7 +171,7 @@ export default function PipelinesPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadPipelines, seedDefaultPipeline]);
+  }, [loadPipelines, seedDefaultPipeline, accountId]);
 
   // Load stages + deals whenever selected pipeline changes.
   // Clearing on no-selection is a legitimate sync with URL/prop

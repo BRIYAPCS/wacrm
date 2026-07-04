@@ -323,7 +323,10 @@ export default function FlowsPage() {
               placeholder="e.g. Welcome menu"
               className="bg-muted"
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleCreate();
+                // Guard against a double-submit: the button is disabled
+                // while `creating`, but the keydown path wasn't, so hitting
+                // Enter twice fired two POSTs.
+                if (e.key === "Enter" && !creating) handleCreate();
               }}
             />
           </div>

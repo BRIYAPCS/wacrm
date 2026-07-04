@@ -52,6 +52,8 @@ interface UseBroadcastSendingReturn {
   createAndSendBroadcast: (payload: BroadcastPayload) => Promise<string>;
   isProcessing: boolean;
   progress: number;
+  /** Side-effect-free recipient count for the review UI (all audience types). */
+  estimateAudienceCount: (audience: AudienceConfig) => Promise<number>;
 }
 
 /**
@@ -571,5 +573,49 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     }
   }
 
-  return { createAndSendBroadcast, isProcessing, progress };
+  /**
+   * Side-effect-free recipient count for the review/estimate UI. Mirrors
+   * `resolveAudience` for every audience type — including `custom_field`,
+   * which the step-4 review previously ignored (showing "0 recipients"
+   * while the send actually reached the real matches). The CSV branch
+   * returns the row count WITHOUT upserting contacts (unlike
+   * resolveAudience, which must create them at send time).
+   */
+  async function estimateAudienceCount(
+    audience: AudienceConfig,
+  ): Promise<number> {
+    const supabase = createClient();
+
+    if (audience.type === 'all') {
+      const { count } = await supabase
+        .from('contacts')
+        .select('*', { count: 'exact', head: true });
+      return count ?? 0;
+    }
+    if (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) {
+      const { data } = await supabase
+        .from('contact_tags')
+        .select('contact_id')
+        .in('tag_id', audience.tagIds);
+      return new Set((data ?? []).map((r) => r.contact_id)).size;
+    }
+    if (audience.type === 'custom_field' && audience.customField) {
+      const contacts = await resolveCustomFieldAudience(
+        supabase,
+        audience.customField,
+      );
+      return contacts.length;
+    }
+    if (audience.type === 'csv' && audience.csvContacts) {
+      return audience.csvContacts.length;
+    }
+    return 0;
+  }
+
+  return {
+    createAndSendBroadcast,
+    isProcessing,
+    progress,
+    estimateAudienceCount,
+  };
 }

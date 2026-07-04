@@ -50,12 +50,21 @@ export default function NotificationsPage() {
   // Realtime — new assignments appear without a refresh, and a
   // "mark all read" fired from another tab/device stays in sync here.
   useEffect(() => {
+    if (!accountId) return;
     const supabase = createClient();
     const channel = supabase
-      .channel("notifications-page")
+      // Scope the channel to the account and filter server-side, and key
+      // the channel name on accountId so switching accounts tears down the
+      // old subscription and builds a fresh, correctly-filtered one.
+      .channel(`notifications-page-${accountId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "notifications" },
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: `account_id=eq.${accountId}`,
+        },
         (payload) => {
           if (payload.eventType === "INSERT") {
             const row = payload.new as Notification;
@@ -83,7 +92,7 @@ export default function NotificationsPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [accountId]);
 
   const markRead = useCallback(
     async (id: string) => {

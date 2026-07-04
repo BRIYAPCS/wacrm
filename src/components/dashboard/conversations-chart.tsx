@@ -27,7 +27,7 @@ const VB_W = 760
 const VB_H = 240
 const PADDING = { top: 16, right: 16, bottom: 28, left: 40 }
 
-export function ConversationsChart({ series, loading, range, onRangeChange }: ConversationsChartProps) {
+export function ConversationsChart({ series, range, onRangeChange }: ConversationsChartProps) {
   const data = series[range]
 
   // Memoise the max so per-day hover math doesn't recompute it.
@@ -72,7 +72,11 @@ export function ConversationsChart({ series, loading, range, onRangeChange }: Co
       </header>
 
       <div className="p-5">
-        {loading || !data ? (
+        {/* Gate on data presence, not `loading`. Switching back to an
+            already-cached range while another range is still fetching keeps
+            `loading` true, but this range's `data` is present — render it
+            rather than flashing a skeleton over loaded data. */}
+        {!data ? (
           <Skeleton className="h-[240px] w-full" />
         ) : data.every((p) => p.incoming === 0 && p.outgoing === 0) ? (
           <EmptyState
@@ -257,8 +261,11 @@ function LineSvg({
           strokeLinejoin="round"
         />
 
-        {/* Hover crosshair */}
-        {hover !== null && (
+        {/* Hover crosshair. Gate on `hovered` (not just `hover !== null`):
+            if the range shrank while the pointer was inside the SVG,
+            `hover.idx` can point past the new, shorter `data` — reading
+            `data[idx].incoming` would then crash the render. */}
+        {hover !== null && hovered && (
           <g pointerEvents="none">
             <line
               x1={hoverX}
@@ -268,8 +275,8 @@ function LineSvg({
               stroke="var(--muted-foreground)"
               strokeDasharray="3 3"
             />
-            <circle cx={hoverX} cy={yFor(data[hover.idx].incoming)} r={3.5} fill="#3b82f6" />
-            <circle cx={hoverX} cy={yFor(data[hover.idx].outgoing)} r={3.5} fill="#7c3aed" />
+            <circle cx={hoverX} cy={yFor(hovered.incoming)} r={3.5} fill="#3b82f6" />
+            <circle cx={hoverX} cy={yFor(hovered.outgoing)} r={3.5} fill="#7c3aed" />
           </g>
         )}
       </svg>
