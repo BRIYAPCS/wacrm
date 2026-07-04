@@ -26,6 +26,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Wallpaper,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +49,18 @@ import {
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
 import { buildReplyPreview } from "./reply-quote";
+import { ChatBackgroundPicker } from "./chat-background-picker";
+import {
+  backgroundStyle,
+  resolveBackgroundToken,
+} from "@/lib/inbox/backgrounds";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 interface ReplyDraft {
@@ -114,6 +127,16 @@ interface MessageThreadProps {
    * tags / deals / notes on touch devices.
    */
   onOpenContactInfo?: () => void;
+  /**
+   * Fired after a per-conversation chat-background change so the parent
+   * can optimistically patch its conversation copy (realtime converges it
+   * too). Optional — the control is admin-only and only rendered when the
+   * caller can edit settings.
+   */
+  onBackgroundChange?: (
+    conversationId: string,
+    background: string | null,
+  ) => void;
 }
 
 function formatDateSeparator(dateStr: string): string {
@@ -146,18 +169,6 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
   { label: "Closed", value: "closed", color: "text-muted-foreground" },
 ];
 
-/**
- * WhatsApp-style doodle background applied to the chat area (both the
- * active thread and the empty state). The SVG tile lives at
- * `/public/inbox-doodle.svg`; the slate-950 colour sits underneath so
- * the doodles read as a subtle pattern rather than a stark grid.
- *
- * Defined once at module scope so the two render paths can't drift —
- * if we ever switch the asset, both spots update together.
- */
-const DOODLE_BG_CLASSES =
-  "bg-background bg-[url('/inbox-doodle.svg')] bg-repeat";
-
 export function MessageThread({
   conversation,
   contact,
@@ -173,8 +184,9 @@ export function MessageThread({
   contactPanelOpen,
   onToggleContactPanel,
   onOpenContactInfo,
+  onBackgroundChange,
 }: MessageThreadProps) {
-  const { user, profile, account } = useAuth();
+  const { user, profile, account, canEditSettings } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -585,6 +597,44 @@ export function MessageThread({
     [conversation, onStatusChange]
   );
 
+  // Per-conversation chat background (owner/admin only). Persisted via a
+  // role-gated route (the shared conversations UPDATE RLS is agent+, so
+  // admin-only enforcement lives server-side); the optimistic callback +
+  // realtime UPDATE converge the open thread.
+  const [bgDialogOpen, setBgDialogOpen] = useState(false);
+  const [bgSaving, setBgSaving] = useState(false);
+  const handleBackgroundSelect = useCallback(
+    async (token: string | null) => {
+      if (!conversation) return;
+      setBgSaving(true);
+      try {
+        const res = await fetch(
+          `/api/inbox/conversations/${conversation.id}/background`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ background: token }),
+          },
+        );
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(data?.error ?? "Could not update the background.");
+        }
+        onBackgroundChange?.(conversation.id, token);
+        toast.success("Chat background updated.");
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Could not update the background.",
+        );
+      } finally {
+        setBgSaving(false);
+      }
+    },
+    [conversation, onBackgroundChange],
+  );
+
   const handleOpenTemplates = useCallback(() => {
     setTemplateModalOpen(true);
   }, []);
@@ -787,12 +837,24 @@ export function MessageThread({
     [conversation, onAssignChange],
   );
 
-  // Empty state — same WhatsApp-style doodle background as the active
-  // thread below, so swapping between empty/selected doesn't change the
-  // pattern under the user's eye.
+  // Effective chat background: the conversation's own override, else the
+  // account default, else the built-in doodle. Applied to both the empty
+  // state and the active thread so swapping between them stays consistent.
+  const chatBg = backgroundStyle(
+    resolveBackgroundToken(conversation?.background, account?.inbox_background),
+  );
+
+  // Empty state — same background as the active thread below, so swapping
+  // between empty/selected doesn't change the backdrop under the user's eye.
   if (!conversation || !contact) {
     return (
-      <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
+      <div
+        className={cn(
+          "flex flex-1 flex-col items-center justify-center",
+          chatBg.className,
+        )}
+        style={chatBg.style}
+      >
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
           <MessageSquare className="h-8 w-8 text-muted-foreground" />
         </div>
@@ -826,8 +888,11 @@ export function MessageThread({
     // clipped and the hover toolbar overlaps the Tags panel. Letting the
     // root shrink lets the bubbles' break-words / max-w caps apply.
     // Issue #257.
-    <div className={cn("flex min-w-0 flex-1 flex-col", DOODLE_BG_CLASSES)}>
-      {/* Header — solid card surface sits on top of the doodle so the
+    <div
+      className={cn("flex min-w-0 flex-1 flex-col", chatBg.className)}
+      style={chatBg.style}
+    >
+      {/* Header — solid card surface sits on top of the wallpaper so the
           name/avatar/dropdowns stay legible. */}
       <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -932,6 +997,20 @@ export function MessageThread({
               <RefreshCw
                 className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
               />
+            </button>
+          )}
+
+          {/* Chat background — owner/admin only. Opens the wallpaper
+              picker for THIS conversation (overrides the account default). */}
+          {canEditSettings && (
+            <button
+              type="button"
+              onClick={() => setBgDialogOpen(true)}
+              aria-label="Change chat background"
+              title="Change chat background"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Wallpaper className="h-3.5 w-3.5" />
             </button>
           )}
 
@@ -1132,6 +1211,31 @@ export function MessageThread({
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
       />
+
+      {/* Per-conversation chat-background picker (owner/admin only). */}
+      {canEditSettings && (
+        <Dialog open={bgDialogOpen} onOpenChange={setBgDialogOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Chat background</DialogTitle>
+              <DialogDescription>
+                Set the wallpaper for this conversation. It overrides the
+                account default for everyone on your team viewing this chat.
+              </DialogDescription>
+            </DialogHeader>
+            <ChatBackgroundPicker
+              value={conversation.background ?? null}
+              onSelect={handleBackgroundSelect}
+              saving={bgSaving}
+              allowInherit
+              inheritPreviewToken={resolveBackgroundToken(
+                null,
+                account?.inbox_background,
+              )}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

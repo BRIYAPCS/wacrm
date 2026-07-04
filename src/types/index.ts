@@ -165,6 +165,12 @@ export interface Conversation {
    * account has no number connected. Replies go out from this number.
    */
   whatsapp_config_id?: string | null;
+  /**
+   * Per-conversation chat-background override (migration 048). A small
+   * app-validated token (see `src/lib/inbox/backgrounds.ts`); null means
+   * "inherit the account default". Owner/admin-settable.
+   */
+  background?: string | null;
 }
 
 // ============================================================

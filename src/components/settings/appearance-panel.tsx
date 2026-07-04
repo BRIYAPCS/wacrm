@@ -6,6 +6,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { MODES, THEMES, type Mode, type ThemeId } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 import { SettingsPanelHead } from "./settings-panel-head";
+import { ChatBackgroundSettings } from "./chat-background-settings";
 
 /**
  * Appearance panel — light/dark mode + accent-color picker.
@@ -70,6 +71,10 @@ export function AppearancePanel() {
           ))}
         </div>
       </div>
+
+      {/* Team-wide chat wallpaper (owner/admin only; server-persisted).
+          Renders nothing for non-admins. */}
+      <ChatBackgroundSettings />
     </section>
   );
 }

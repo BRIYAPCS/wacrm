@@ -9,6 +9,32 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.24.0] — 2026-07-04
+
+Customisable **chat backgrounds** (WhatsApp-style wallpapers). **Migration
+required:** apply `supabase/migrations/048_chat_backgrounds.sql`.
+
+### Added
+
+- **Account-wide chat background** in Settings → Appearance (owner/admin
+  only): pick a preset (doodle, plain, solid colours, subtle gradients), a
+  **custom colour**, or **upload your own image**. Shared across the team.
+- **Per-conversation background** from the conversation header (owner/admin
+  only) — a wallpaper icon opens the same picker and overrides the account
+  default for that one chat. Clear it to fall back to the default.
+- The chosen wallpaper renders behind the message thread and the empty
+  "select a conversation" state.
+
+### Notes
+
+- Backgrounds are stored as small, validated tokens (never raw CSS);
+  uploads go to a new `chat-backgrounds` storage bucket (images only,
+  5 MB cap) whose writes are restricted to owners/admins.
+- Per-conversation changes are enforced admin-only server-side (the shared
+  `conversations` update policy is agent+), and propagate to teammates
+  viewing the same thread via realtime.
+- Agents and viewers see the backgrounds but can't change them.
+
 ## [0.23.1] — 2026-07-04
 
 Documentation. No migration, no app-code change.
