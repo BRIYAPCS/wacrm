@@ -23,6 +23,7 @@ import {
 } from "@/lib/whatsapp/ingest-inbound";
 import { enrichContactFromWaha } from "@/lib/waha/profile";
 import { enrichGroupFromWaha } from "@/lib/waha/group";
+import { syncWahaHistory } from "@/lib/waha/sync";
 import { chatIdToPhone, wahaBaseUrl, wahaWebhookHmacKey } from "@/lib/waha/config";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -147,7 +148,9 @@ export async function POST(request: Request) {
   const admin = supabaseAdmin();
   const { data: cfg } = await admin
     .from("whatsapp_config")
-    .select("id, account_id, user_id, access_token, base_url, phone_number, status")
+    .select(
+      "id, account_id, user_id, access_token, base_url, phone_number, status, history_synced_at",
+    )
     .eq("provider", "waha")
     .eq("waha_session", session)
     .maybeSingle();
@@ -167,15 +170,45 @@ export async function POST(request: Request) {
     const meId = body.me?.id ?? body.payload?.me?.id ?? null;
     const phone = meId ? chatIdToPhone(meId) : cfg.phone_number;
     const nextStatus = connected ? "connected" : "disconnected";
-    if (cfg.status !== nextStatus || (phone && phone !== cfg.phone_number)) {
+    // First time this number reaches WORKING → import its history once. Stamp
+    // the flag now (before running) so a reconnect can't re-trigger it.
+    const shouldAutoSync = connected && !cfg.history_synced_at;
+
+    if (
+      cfg.status !== nextStatus ||
+      (phone && phone !== cfg.phone_number) ||
+      shouldAutoSync
+    ) {
       await admin
         .from("whatsapp_config")
         .update({
           status: nextStatus,
           phone_number: phone ?? cfg.phone_number,
           connected_at: connected ? new Date().toISOString() : null,
+          ...(shouldAutoSync
+            ? { history_synced_at: new Date().toISOString() }
+            : {}),
         })
         .eq("id", cfg.id);
+    }
+
+    if (shouldAutoSync) {
+      const creds = {
+        baseUrl: wahaBaseUrl(cfg.base_url),
+        apiKey: decrypt(cfg.access_token),
+        session,
+      };
+      after(() =>
+        syncWahaHistory(
+          admin,
+          {
+            accountId: cfg.account_id,
+            ownerUserId: cfg.user_id,
+            configId: cfg.id,
+          },
+          creds,
+        ).catch((e) => console.error("[waha auto-sync] failed:", e)),
+      );
     }
     return NextResponse.json({ received: true });
   }
