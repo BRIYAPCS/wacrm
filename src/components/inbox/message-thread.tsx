@@ -897,6 +897,36 @@ export function MessageThread({
     ? contact.name || "Group chat"
     : contact.name || contact.phone;
   const messageGroups = groupMessagesByDate(messages);
+
+  // Teams-style run headers: the sender's name shows above the FIRST message of
+  // each consecutive run from the same sender (a new run also starts after a
+  // >5-min gap). This is what makes multi-agent threads legible — you can see
+  // which agent sent which reply.
+  const RUN_GAP_MS = 5 * 60 * 1000;
+  const senderNameFor = (m: Message): string => {
+    if (m.sender_type === "bot") return "AI assistant";
+    if (m.sender_type === "agent") {
+      const p = profiles.find((pr) => pr.user_id === m.sender_id);
+      return p?.full_name || "Agent";
+    }
+    if (isGroup) return m.sender_name || m.sender_phone || "Member";
+    return contact.name || contact.phone || "Customer";
+  };
+  const startsRun = (m: Message, prev: Message | null): boolean => {
+    if (!prev) return true;
+    if (prev.sender_type !== m.sender_type) return true;
+    if (m.sender_type === "agent" && prev.sender_id !== m.sender_id) return true;
+    if (
+      isGroup &&
+      m.sender_type === "customer" &&
+      (prev.sender_phone ?? "") !== (m.sender_phone ?? "")
+    )
+      return true;
+    const gap =
+      new Date(m.created_at).getTime() - new Date(prev.created_at).getTime();
+    return gap > RUN_GAP_MS;
+  };
+
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
   );
@@ -1178,7 +1208,11 @@ export function MessageThread({
                 </div>
                 {/* Messages */}
                 <div className="space-y-2">
-                  {group.messages.map((msg) => {
+                  {group.messages.map((msg, idx) => {
+                    const prevMsg = idx > 0 ? group.messages[idx - 1] : null;
+                    const showSender = startsRun(msg, prevMsg);
+                    const isAgentMsg =
+                      msg.sender_type === "agent" || msg.sender_type === "bot";
                     const parent = msg.reply_to_message_id
                       ? messagesById.get(msg.reply_to_message_id)
                       : null;
@@ -1201,23 +1235,33 @@ export function MessageThread({
                       void postReaction(msg.id, next);
                     };
                     return (
-                      <MessageActions
-                        key={msg.id}
-                        message={msg}
-                        onReply={() => handleStartReply(msg)}
-                        onReact={(emoji) => {
-                          if (emoji) void postReaction(msg.id, emoji);
-                        }}
-                      >
-                        <MessageBubble
+                      <div key={msg.id}>
+                        {showSender && (
+                          <div
+                            className={cn(
+                              "mb-0.5 px-1 text-xs font-medium text-muted-foreground",
+                              isAgentMsg ? "text-right" : "text-left"
+                            )}
+                          >
+                            {senderNameFor(msg)}
+                          </div>
+                        )}
+                        <MessageActions
                           message={msg}
-                          reply={reply}
-                          reactions={msgReactions}
-                          currentUserId={user?.id}
-                          onToggleReaction={handlePillToggle}
-                          isGroup={isGroup}
-                        />
-                      </MessageActions>
+                          onReply={() => handleStartReply(msg)}
+                          onReact={(emoji) => {
+                            if (emoji) void postReaction(msg.id, emoji);
+                          }}
+                        >
+                          <MessageBubble
+                            message={msg}
+                            reply={reply}
+                            reactions={msgReactions}
+                            currentUserId={user?.id}
+                            onToggleReaction={handlePillToggle}
+                          />
+                        </MessageActions>
+                      </div>
                     );
                   })}
                 </div>
