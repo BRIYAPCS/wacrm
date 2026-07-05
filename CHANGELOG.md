@@ -9,6 +9,16 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.40.4] — 2026-07-05
+
+### Fixed
+
+- **Password reset link no longer 404s.** The reset email pointed at
+  `/auth/callback`, which didn't exist — so clicking it hit "Page not found."
+  Added the `/auth/callback` route (exchanges the email code for a session, with
+  an open-redirect guard on `next`) and the `/reset-password` page where the
+  user sets a new password. Same route also backs signup-confirmation links.
+
 ## [0.40.3] — 2026-07-05
 
 ### Added
