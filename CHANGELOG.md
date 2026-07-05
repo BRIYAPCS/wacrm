@@ -9,6 +9,28 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.28.0] — 2026-07-04
+
+**Platform-admin console** for subscription tiers (Phase 3). No migration
+(uses the `platform_admins` table from 050).
+
+### Added
+
+- A hidden **`/superadmin`** console (the vendor's "developer account"):
+  list every account, set its tier (Basic / Pro / Advanced / instance
+  default), and force-on per-account **add-on** features. 404s for anyone
+  who isn't a platform admin — it doesn't reveal it exists.
+- `requirePlatformAdmin()` guards the console + `/api/superadmin/*` routes,
+  identifying the vendor via the `platform_admins` table **or** the
+  `PLATFORM_ADMIN_EMAILS` env allowlist (bootstrap). Cross-account writes
+  use the service role; every change is written to the audit log.
+
+### Setup
+
+- To become a platform admin, either set `PLATFORM_ADMIN_EMAILS` (comma-
+  separated) to your login email, or `INSERT INTO platform_admins (user_id)
+  VALUES ('<your-auth-uid>')`. Then visit `/superadmin`.
+
 ## [0.27.0] — 2026-07-04
 
 Subscription tiers are now **enforced** (Phase 2). No migration. Behavior
