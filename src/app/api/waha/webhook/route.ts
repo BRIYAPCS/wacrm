@@ -51,6 +51,8 @@ interface MessagePayload {
     notifyName?: string;
     pushName?: string;
     notify?: string;
+    /** message.ack: the raw WhatsApp message key(s) — stable across @c.us/@lid. */
+    MessageIDs?: string[];
     // GOWS raw message info — carries the real phone when WhatsApp addresses
     // the message by LID (privacy identifier) instead of the number.
     Info?: {
@@ -156,17 +158,23 @@ export async function POST(request: Request) {
   // Delivery/read receipt for an outbound message → advance its tick status.
   if (body?.event === "message.ack") {
     const p = body.payload ?? {};
-    const ackId = typeof p.id === "string" ? p.id : "";
+    // The ack's `id` uses a different address form (@lid) than the id we
+    // stored at send time (@c.us), but the trailing WhatsApp message key is
+    // identical. Prefer _data.MessageIDs (the raw key); else the id's suffix.
+    const rawKey =
+      (Array.isArray(p._data?.MessageIDs) ? p._data?.MessageIDs[0] : undefined) ??
+      (typeof p.id === "string" ? p.id.split("_").pop() : undefined) ??
+      "";
     const status = wahaAckToStatus(
       typeof p.ack === "number" ? p.ack : null,
       p.ackName,
     );
     const preds = status ? MESSAGE_STATUS_PREDECESSORS[status] : undefined;
-    if (ackId && status && preds) {
+    if (rawKey && status && preds) {
       await admin
         .from("messages")
         .update({ status })
-        .eq("message_id", ackId)
+        .like("message_id", `%${rawKey}`)
         .in("status", preds);
     }
     return NextResponse.json({ received: true });
