@@ -75,10 +75,12 @@ export function SuperadminWhatsapp({
         body.accountSid = f("accountSid");
         body.authToken = f("authToken");
         body.from = f("from");
-      } else {
+      } else if (provider === "wsapi") {
         body.instanceId = f("instanceId");
         body.apiKey = f("apiKey");
       }
+      // waha needs nothing beyond the label — the server auto-creates a
+      // session on the platform's WAHA host.
       const res = await fetch(`/api/superadmin/accounts/${accountId}/whatsapp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -195,6 +197,13 @@ export function SuperadminWhatsapp({
                 {field("instanceId", "Instance ID", undefined, "ins_…")}
                 {field("apiKey", "API key", "password", "sk_…")}
               </>
+            )}
+            {provider === "waha" && (
+              <div className="col-span-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+                A pairing session is created automatically on the self-hosted
+                server. Just add a label — the client scans the QR from Settings
+                → WhatsApp to connect their number.
+              </div>
             )}
             <div className="col-span-2">
               <label className="text-[11px] font-medium text-muted-foreground">Label (shown to client)</label>

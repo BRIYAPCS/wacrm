@@ -9,6 +9,38 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.35.0] — 2026-07-05
+
+**WAHA (self-hosted WhatsApp) as a provider** — connect numbers through a
+WhatsApp gateway you run yourself ([WAHA](https://waha.devlike.pro), GOWS
+engine), alongside Meta, Twilio and wsapi.chat. Customers pair by scanning a
+QR from their own phone; the provider stays hidden from tenants, exactly like
+the others. **Migration required:** apply
+`supabase/migrations/055_whatsapp_waha.sql`.
+
+### Added
+
+- **WAHA provider** end-to-end: outbound text/image send, inbound webhook
+  ingest (HMAC-SHA512 verified), live `session.status` sync, and contact
+  profile (photo/about) enrichment. The WAHA server (base URL + API key) is
+  platform infrastructure configured via env (`WAHA_BASE_URL`,
+  `WAHA_API_KEY`, `WAHA_WEBHOOK_HMAC_KEY`, optional `WAHA_WEBHOOK_URL`) — see
+  [docs/waha-self-hosted.md](docs/waha-self-hosted.md).
+- **Superadmin provisioning** for WAHA needs only a label: the app auto-creates
+  a session on the WAHA server (wiring up its inbound webhook) and the customer
+  scans the QR from Settings → WhatsApp. No credentials are pasted per-number.
+- WAHA numbers count against the account's `whatsapp_numbers` plan limit like
+  every other provider; **multiple sessions work on the free WAHA Core tier**.
+
+### Changed
+
+- The tenant QR-pairing routes are now **provider-agnostic**
+  (`/api/whatsapp/link/[id]` + `/[id]/qr`), dispatching on the number's
+  provider so any QR gateway (wsapi, waha) shares one code path. The old
+  wsapi-specific `[id]` routes were removed (internal; no tenant-facing change).
+- The superadmin "remove number" action now frees the underlying provider
+  session (WAHA session deleted, wsapi logged out) before deleting the row.
+
 ## [0.34.1] — 2026-07-05
 
 ### Fixed

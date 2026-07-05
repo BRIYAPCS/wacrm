@@ -27,10 +27,14 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
+import {
+  WHATSAPP_PROVIDERS,
+  type WhatsAppProviderId,
+} from '@/lib/whatsapp/providers/registry';
 
 interface NumberRow {
   id: string;
-  provider: 'meta' | 'wsapi';
+  provider: WhatsAppProviderId;
   phone_number_id: string | null;
   wsapi_instance_id: string | null;
   phone_number: string | null;
@@ -207,8 +211,9 @@ export function WhatsAppNumbers() {
               {editingId !== row.id && (
                 <div className="flex items-center gap-1">
                   {/* A provisioned number that still needs the customer to
-                      pair their phone (provider-blind link flow). */}
-                  {!connected && row.provider === 'wsapi' && (
+                      pair their phone (provider-blind link flow). Any QR
+                      provider (wsapi, waha) shows the link button. */}
+                  {!connected && WHATSAPP_PROVIDERS[row.provider]?.needsQr && (
                     <Button size="sm" onClick={() => setLinkId(row.id)}>
                       Link your number
                     </Button>

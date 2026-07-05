@@ -8,6 +8,8 @@ import { NextResponse } from "next/server";
 import { requirePlatformAdmin, NotPlatformAdminError } from "@/lib/auth/platform";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { wsapiLogout } from "@/lib/wsapi/management";
+import { wahaDeleteSession } from "@/lib/waha/management";
+import { wahaBaseUrl } from "@/lib/waha/config";
 
 export const runtime = "nodejs";
 
@@ -21,17 +23,28 @@ export async function DELETE(
 
     const { data: row } = await supabase
       .from("whatsapp_config")
-      .select("id, provider, wsapi_instance_id, access_token")
+      .select("id, provider, wsapi_instance_id, waha_session, base_url, access_token")
       .eq("id", configId)
       .eq("account_id", accountId)
       .maybeSingle();
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    if (row.provider === "wsapi" && row.wsapi_instance_id) {
-      await wsapiLogout({
-        instanceId: row.wsapi_instance_id,
-        apiKey: decrypt(row.access_token),
-      });
+    // Best-effort: free the session on the provider's side before deleting.
+    try {
+      if (row.provider === "wsapi" && row.wsapi_instance_id) {
+        await wsapiLogout({
+          instanceId: row.wsapi_instance_id,
+          apiKey: decrypt(row.access_token),
+        });
+      } else if (row.provider === "waha" && row.waha_session) {
+        await wahaDeleteSession({
+          baseUrl: wahaBaseUrl(row.base_url),
+          apiKey: decrypt(row.access_token),
+          session: row.waha_session,
+        });
+      }
+    } catch (err) {
+      console.warn("[superadmin whatsapp delete] provider cleanup failed:", err);
     }
 
     const { error } = await supabase
