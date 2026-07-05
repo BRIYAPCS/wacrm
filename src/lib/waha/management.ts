@@ -112,6 +112,19 @@ export async function wahaStartSession(creds: WahaCreds): Promise<void> {
 }
 
 /**
+ * Restart (stop→start) a session. This is what actually revives a FAILED
+ * session — a plain /start won't, since the session already "exists". Also
+ * mints a fresh QR when the old one has been exhausted.
+ */
+export async function wahaRestartSession(creds: WahaCreds): Promise<void> {
+  await wahaRequest(
+    creds,
+    "POST",
+    `/api/sessions/${encodeURIComponent(creds.session)}/restart`,
+  ).catch(() => {});
+}
+
+/**
  * The pairing QR as a `data:image/png;base64,…` URL, or null when there's no
  * QR to show (already paired, or the session isn't in a scan state).
  */
@@ -156,17 +169,32 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function wahaScanState(
   creds: WahaCreds,
 ): Promise<{ connected: boolean; qr: string | null }> {
-  const st = await wahaSessionStatus(creds);
-  if (st.connected) return { connected: true, qr: null };
-  if (st.raw === "STOPPED" || st.raw === "FAILED") await wahaStartSession(creds);
+  // One probe: connected? scannable now? otherwise report the raw state.
+  const probe = async (): Promise<
+    { done: true; connected: boolean; qr: string | null } | { done: false; raw: string }
+  > => {
+    const st = await wahaSessionStatus(creds);
+    if (st.connected) return { done: true, connected: true, qr: null };
+    if (st.raw === "SCAN_QR_CODE") {
+      const qr = await wahaQrImage(creds);
+      if (qr) return { done: true, connected: false, qr };
+    }
+    return { done: false, raw: st.raw };
+  };
 
-  // A freshly (re)started session needs a moment before the QR exists.
-  for (let i = 0; i < 4; i++) {
-    const qr = await wahaQrImage(creds);
-    if (qr) return { connected: false, qr };
-    const again = await wahaSessionStatus(creds);
-    if (again.connected) return { connected: true, qr: null };
-    if (i < 3) await sleep(700);
+  let r = await probe();
+  if (r.done) return { connected: r.connected, qr: r.qr };
+
+  // Revive a dead session — FAILED needs a full restart, not just /start.
+  if (r.raw === "FAILED") await wahaRestartSession(creds);
+  else if (r.raw === "STOPPED") await wahaStartSession(creds);
+
+  // Wait (bounded) for the restart to reach SCAN_QR_CODE and mint a QR, so a
+  // single request reliably returns one instead of the client restart-looping.
+  for (let i = 0; i < 12; i++) {
+    await sleep(750);
+    r = await probe();
+    if (r.done) return { connected: r.connected, qr: r.qr };
   }
   return { connected: false, qr: null };
 }
