@@ -9,6 +9,26 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.29.0] — 2026-07-04
+
+Subscription tiers, finished: a **Plan & billing** settings page and
+optional **Stripe** billing (Phase 4). No migration.
+
+### Added
+
+- **Settings → Plan & billing**: shows the account's current tier and a
+  feature/limit comparison. Owners get self-serve upgrade buttons when
+  Stripe is configured; otherwise a "contact your provider" note. This is
+  where the gated nav locks / upgrade prompts now link.
+- **Stripe billing (optional)** — `POST /api/stripe/checkout` (owner)
+  starts Checkout; `POST /api/stripe/webhook` maps a paid subscription onto
+  `accounts.plan`. Entirely inert unless `STRIPE_SECRET_KEY` is set, so
+  per-instance deploys ignore it. A Stripe event never overwrites a plan you
+  set manually in the superadmin console (`plan_source='manual'` wins).
+- **[docs/plans-and-billing.md](./docs/plans-and-billing.md)** — the full
+  guide: tier resolution, the superadmin console, per-account add-ons, and
+  Stripe setup. New env vars documented in `.env.local.example`.
+
 ## [0.28.0] — 2026-07-04
 
 **Platform-admin console** for subscription tiers (Phase 3). No migration

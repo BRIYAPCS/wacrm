@@ -111,6 +111,15 @@ Bring-your-own-key, per account, encrypted at rest — no per-seat AI fee.
   your own automations on top of your CRM.
 - See **[public-api.md](./public-api.md)**.
 
+## Plans & billing (subscription tiers)
+
+- Sell the app in **Basic / Pro / Advanced** tiers from one codebase.
+  Tiers gate whole modules (AI, Flows, Automations, Public API, multi-number,
+  audit) and numeric limits (seats, numbers, contacts…).
+- A hidden **`/superadmin`** console (vendor-only) sets each client's tier
+  and per-account add-ons; **Stripe** can drive it automatically.
+- See **[plans-and-billing.md](./plans-and-billing.md)**.
+
 ## Appearance
 
 - Light/dark mode + accent-colour themes (device-scoped).
@@ -137,6 +146,7 @@ Bring-your-own-key, per account, encrypted at rest — no per-seat AI fee.
 | Per-customer redeploy | [new-customer-checklist.md](./new-customer-checklist.md) |
 | Database & one-command migrate | [database-setup.md](./database-setup.md) |
 | AI assistant (providers + KB) | [ai-assistant.md](./ai-assistant.md) |
+| Plans & billing (tiers) | [plans-and-billing.md](./plans-and-billing.md) |
 | Automations, Flows & cron | [automations-and-cron.md](./automations-and-cron.md) |
 | Email deliverability (SMTP) | [email-setup.md](./email-setup.md) |
 | Public REST API | [public-api.md](./public-api.md) |
