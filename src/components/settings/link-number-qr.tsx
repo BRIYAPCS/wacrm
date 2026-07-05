@@ -40,7 +40,7 @@ export function LinkNumberQr({
   }, []);
 
   const refreshQr = useCallback(async () => {
-    const res = await fetch(`/api/whatsapp/wsapi/${numberId}/qr`);
+    const res = await fetch(`/api/whatsapp/link/${numberId}/qr`);
     const data = (await res.json().catch(() => null)) as
       | { connected?: boolean; qr?: string | null }
       | null;
@@ -61,7 +61,7 @@ export function LinkNumberQr({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshQr();
     pollRef.current = setInterval(async () => {
-      const res = await fetch(`/api/whatsapp/wsapi/${numberId}`);
+      const res = await fetch(`/api/whatsapp/link/${numberId}`);
       const data = (await res.json().catch(() => null)) as { connected?: boolean } | null;
       if (data?.connected) {
         setConnected(true);

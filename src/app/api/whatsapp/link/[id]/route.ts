@@ -1,6 +1,9 @@
 // ============================================================
-// GET    /api/whatsapp/wsapi/[id]  — poll session status (admin+)
-// DELETE /api/whatsapp/wsapi/[id]  — logout + remove the number (admin+)
+// GET    /api/whatsapp/link/[id]  — poll pairing status (admin+)
+// DELETE /api/whatsapp/link/[id]  — unlink + remove the number (admin+)
+//
+// PROVIDER-AGNOSTIC: works for any QR-paired provider (wsapi, waha). The row's
+// `provider` decides which gateway to talk to; the tenant never learns which.
 // ============================================================
 
 import { NextResponse } from "next/server";
@@ -10,19 +13,23 @@ import { decrypt } from "@/lib/whatsapp/encryption";
 import { wsapiSessionStatus, wsapiLogout } from "@/lib/wsapi/management";
 import { jidToPhone } from "@/lib/wsapi/config";
 import { WsapiError } from "@/lib/wsapi/client";
+import { wahaSessionStatus, wahaDeleteSession } from "@/lib/waha/management";
+import { wahaBaseUrl } from "@/lib/waha/config";
+import { WahaError } from "@/lib/waha/client";
 
 export const runtime = "nodejs";
 
 async function loadRow(id: string) {
   const ctx = await requireRole("admin");
-  const { data, error } = await ctx.supabase
+  const { data } = await ctx.supabase
     .from("whatsapp_config")
-    .select("id, wsapi_instance_id, access_token, status, phone_number")
+    .select(
+      "id, provider, wsapi_instance_id, waha_session, base_url, access_token, status, phone_number",
+    )
     .eq("id", id)
     .eq("account_id", ctx.accountId)
-    .eq("provider", "wsapi")
+    .in("provider", ["wsapi", "waha"])
     .maybeSingle();
-  if (error || !data) return { ctx, row: null };
   return { ctx, row: data };
 }
 
@@ -35,21 +42,31 @@ export async function GET(
     const { ctx, row } = await loadRow(id);
     if (!row) return NextResponse.json({ error: "Number not found" }, { status: 404 });
 
-    let status;
+    let connected = false;
+    let phone: string | null = row.phone_number;
     try {
-      status = await wsapiSessionStatus({
-        instanceId: row.wsapi_instance_id as string,
-        apiKey: decrypt(row.access_token),
-      });
+      if (row.provider === "waha") {
+        const st = await wahaSessionStatus({
+          baseUrl: wahaBaseUrl(row.base_url),
+          apiKey: decrypt(row.access_token),
+          session: row.waha_session as string,
+        });
+        connected = st.connected;
+        phone = st.phone ?? row.phone_number;
+      } else {
+        const st = await wsapiSessionStatus({
+          instanceId: row.wsapi_instance_id as string,
+          apiKey: decrypt(row.access_token),
+        });
+        connected = st.isConnected && st.isLoggedIn;
+        phone = st.deviceId ? jidToPhone(st.deviceId) : row.phone_number;
+      }
     } catch (err) {
-      if (err instanceof WsapiError) {
+      if (err instanceof WsapiError || err instanceof WahaError) {
         return NextResponse.json({ connected: false, error: err.message });
       }
       throw err;
     }
-
-    const connected = status.isConnected && status.isLoggedIn;
-    const phone = status.deviceId ? jidToPhone(status.deviceId) : row.phone_number;
 
     // Keep the stored row in sync with reality.
     const nextStatus = connected ? "connected" : "disconnected";
@@ -79,11 +96,19 @@ export async function DELETE(
     const { ctx, row } = await loadRow(id);
     if (!row) return NextResponse.json({ error: "Number not found" }, { status: 404 });
 
-    // Best-effort logout so the WhatsApp session is freed on WSAPI's side.
-    await wsapiLogout({
-      instanceId: row.wsapi_instance_id as string,
-      apiKey: decrypt(row.access_token),
-    });
+    // Best-effort: free the session on the provider's side before deleting.
+    if (row.provider === "waha") {
+      await wahaDeleteSession({
+        baseUrl: wahaBaseUrl(row.base_url),
+        apiKey: decrypt(row.access_token),
+        session: row.waha_session as string,
+      });
+    } else {
+      await wsapiLogout({
+        instanceId: row.wsapi_instance_id as string,
+        apiKey: decrypt(row.access_token),
+      });
+    }
 
     const { error } = await ctx.supabase
       .from("whatsapp_config")

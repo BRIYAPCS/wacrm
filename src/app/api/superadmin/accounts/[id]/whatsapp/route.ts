@@ -8,6 +8,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import crypto from "node:crypto";
 
 import { requirePlatformAdmin, NotPlatformAdminError } from "@/lib/auth/platform";
 import { encrypt } from "@/lib/whatsapp/encryption";
@@ -21,8 +22,25 @@ import {
 import { wsapiSessionStatus } from "@/lib/wsapi/management";
 import { jidToPhone } from "@/lib/wsapi/config";
 import { WsapiError } from "@/lib/wsapi/client";
+import { wahaEnsureSession } from "@/lib/waha/management";
+import { WahaError } from "@/lib/waha/client";
+import {
+  isWahaConfigured,
+  wahaEnvApiKey,
+  wahaEnvBaseUrl,
+  wahaWebhookHmacKey,
+} from "@/lib/waha/config";
 
 export const runtime = "nodejs";
+
+/** The app's public base URL, for WAHA to POST webhooks back to us. */
+function publicBaseUrl(req: Request): string {
+  const explicit = (process.env.WAHA_WEBHOOK_URL ?? "").replace(/\/+$/, "");
+  if (explicit) return explicit;
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  return host ? `${proto}://${host}` : "";
+}
 
 function fail(err: unknown) {
   if (err instanceof NotPlatformAdminError) {
@@ -131,7 +149,7 @@ export async function POST(
       row.phone_number = from.startsWith("+") ? from : `+${from.replace(/[^\d]/g, "")}`;
       row.status = "connected";
       row.connected_at = new Date().toISOString();
-    } else {
+    } else if (provider === "wsapi") {
       // wsapi — verify the instance, then it may still need a QR scan.
       const instanceId = String(body?.instanceId ?? "").trim();
       const apiKey = String(body?.apiKey ?? "").trim();
@@ -151,6 +169,41 @@ export async function POST(
       }
       row.wsapi_instance_id = instanceId;
       row.access_token = encrypt(apiKey);
+    } else {
+      // waha — self-hosted. No credentials to paste: the WAHA server (base
+      // URL + key) is platform infra from env. We just create a session on it
+      // and the customer scans the QR. Fully provider-blind.
+      if (!isWahaConfigured()) {
+        return NextResponse.json(
+          { error: "WAHA server is not configured. Set WAHA_BASE_URL and WAHA_API_KEY." },
+          { status: 400 },
+        );
+      }
+      const webhookBase = publicBaseUrl(req);
+      if (!webhookBase) {
+        return NextResponse.json(
+          { error: "Could not determine the app's public URL for the WAHA webhook. Set WAHA_WEBHOOK_URL." },
+          { status: 400 },
+        );
+      }
+      const session = `acc${accountId.replace(/-/g, "").slice(0, 8)}_${crypto.randomBytes(4).toString("hex")}`;
+      const baseUrl = wahaEnvBaseUrl();
+      const apiKey = wahaEnvApiKey();
+      try {
+        await wahaEnsureSession(
+          { baseUrl, apiKey, session },
+          { webhookUrl: `${webhookBase}/api/waha/webhook`, hmacKey: wahaWebhookHmacKey() },
+        );
+      } catch (err) {
+        if (err instanceof WahaError) {
+          return NextResponse.json({ error: err.message }, { status: 400 });
+        }
+        throw err;
+      }
+      row.waha_session = session;
+      row.base_url = baseUrl;
+      row.access_token = encrypt(apiKey);
+      row.status = "disconnected";
     }
 
     // First number becomes the account default.

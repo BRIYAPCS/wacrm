@@ -9,7 +9,7 @@
 // console does. Keep provider labels out of tenant-facing UI.
 // ============================================================
 
-export type WhatsAppProviderId = "meta" | "twilio" | "wsapi";
+export type WhatsAppProviderId = "meta" | "twilio" | "wsapi" | "waha";
 
 export interface WhatsAppProviderMeta {
   id: WhatsAppProviderId;
@@ -25,6 +25,7 @@ export const WHATSAPP_PROVIDERS: Record<WhatsAppProviderId, WhatsAppProviderMeta
   meta: { id: "meta", label: "Meta Cloud API", needsQr: false, supportsTemplates: true },
   twilio: { id: "twilio", label: "Twilio", needsQr: false, supportsTemplates: true },
   wsapi: { id: "wsapi", label: "wsapi.chat", needsQr: true, supportsTemplates: false },
+  waha: { id: "waha", label: "WAHA (self-hosted)", needsQr: true, supportsTemplates: false },
 };
 
 export const WHATSAPP_PROVIDER_IDS = Object.keys(
