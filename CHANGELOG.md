@@ -9,6 +9,17 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.40.1] — 2026-07-05
+
+### Fixed
+
+- **WAHA delivery ticks now actually advance.** GOWS sends the delivery/read
+  ack keyed by the contact's `@lid`, while the outbound row was stored keyed by
+  `@c.us` — so the ids never matched and messages stayed on one ✓. The webhook
+  now matches on the stable trailing WhatsApp message key, so outbound bubbles
+  correctly move to ✓✓ delivered and ✓✓ blue read. (Verified live: sent → read
+  in ~2s.)
+
 ## [0.40.0] — 2026-07-05
 
 ### Added
