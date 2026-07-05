@@ -9,6 +9,33 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.30.0] — 2026-07-05
+
+**Two ways to connect WhatsApp** — Meta Cloud API (as before) *and*
+**wsapi.chat** (QR-paired, no Meta Business account needed). **Migration
+required:** apply `supabase/migrations/051_whatsapp_providers.sql`.
+
+### Added
+
+- **Settings → WhatsApp → "Add number via wsapi.chat"**: paste a wsapi.chat
+  instance ID + API key, **scan the QR right in the app**, and it connects.
+  The number is stored like any other (encrypted key) and shows a provider
+  badge in the connected-numbers list.
+- **Mix providers**: an account can run Meta numbers and wsapi.chat numbers
+  side by side in one inbox. Inbound is routed to the right account by the
+  instance id; replies go back out through whichever provider the
+  conversation's number uses — **fully two-way** on both.
+- Adding a number (either provider) now enforces the plan's
+  **`whatsapp_numbers` limit** (Meta + wsapi.chat combined).
+
+### Notes
+
+- wsapi.chat text + image messages are supported from the inbox; WhatsApp
+  *templates* still require a Meta number.
+- Set each wsapi.chat instance's webhook to
+  `https://<your-domain>/api/wsapi/webhook` to receive messages. See
+  [docs/wsapi-testing.md](./docs/wsapi-testing.md).
+
 ## [0.29.0] — 2026-07-04
 
 Subscription tiers, finished: a **Plan & billing** settings page and

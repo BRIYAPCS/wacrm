@@ -34,7 +34,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from('whatsapp_config')
       .select(
-        'id, phone_number_id, waba_id, label, is_default, status, registered_at, connected_at, subscribed_apps_at, last_registration_error, created_at',
+        'id, provider, phone_number_id, wsapi_instance_id, phone_number, waba_id, label, is_default, status, registered_at, connected_at, subscribed_apps_at, last_registration_error, created_at',
       )
       .eq('account_id', accountId)
       // Default first, then most-recently connected.
