@@ -23,7 +23,15 @@ import {
   MessageSquareText,
   CalendarClock,
   Users,
+  Bold,
+  Italic,
+  Strikethrough,
+  Code,
+  List,
+  ListOrdered,
+  Type,
 } from "lucide-react";
+import { EmojiPicker } from "./emoji-picker";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { Input } from "@/components/ui/input";
@@ -153,6 +161,7 @@ export function MessageComposer({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
+  const [formatBarOpen, setFormatBarOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Saved replies (canned responses). Loaded once; opened either by the
@@ -359,6 +368,77 @@ export function MessageComposer({
     setPickerIndex(0);
     setPickerOpen((o) => !o);
   }, [inputsDisabled]);
+
+  // Insert text (e.g. an emoji) at the caret, then restore focus + caret.
+  const insertAtCursor = useCallback(
+    (snippet: string) => {
+      const el = textareaRef.current;
+      const start = el?.selectionStart ?? text.length;
+      const end = el?.selectionEnd ?? text.length;
+      const next = text.slice(0, start) + snippet + text.slice(end);
+      setText(next);
+      requestAnimationFrame(() => {
+        adjustHeight();
+        const e2 = textareaRef.current;
+        if (e2) {
+          e2.focus();
+          const pos = start + snippet.length;
+          e2.setSelectionRange(pos, pos);
+        }
+      });
+    },
+    [text, adjustHeight],
+  );
+
+  // Wrap the current selection in WhatsApp formatting markers (*bold*, _italic_,
+  // ~strike~, ```mono```). With no selection, drops the markers at the caret so
+  // the user can type between them.
+  const wrapSelection = useCallback(
+    (before: string, after: string) => {
+      const el = textareaRef.current;
+      if (!el) return;
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const selected = text.slice(start, end);
+      const next =
+        text.slice(0, start) + before + selected + after + text.slice(end);
+      setText(next);
+      requestAnimationFrame(() => {
+        adjustHeight();
+        const e2 = textareaRef.current;
+        if (!e2) return;
+        e2.focus();
+        e2.setSelectionRange(start + before.length, end + before.length);
+      });
+    },
+    [text, adjustHeight],
+  );
+
+  // Prefix each line spanned by the selection — "- " for bullets, "1. " (auto-
+  // incrementing) for a numbered list. WhatsApp renders both.
+  const prefixLines = useCallback(
+    (kind: "bullet" | "number") => {
+      const el = textareaRef.current;
+      if (!el) return;
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+      const nextNl = text.indexOf("\n", end);
+      const lineEnd = nextNl === -1 ? text.length : nextNl;
+      const block = text.slice(lineStart, lineEnd);
+      const prefixed = block
+        .split("\n")
+        .map((line, i) => (kind === "number" ? `${i + 1}. ` : "- ") + line)
+        .join("\n");
+      const next = text.slice(0, lineStart) + prefixed + text.slice(lineEnd);
+      setText(next);
+      requestAnimationFrame(() => {
+        adjustHeight();
+        textareaRef.current?.focus();
+      });
+    },
+    [text, adjustHeight],
+  );
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -760,144 +840,210 @@ export function MessageComposer({
               </ul>
             </div>
           )}
-          <div className="flex items-end gap-2">
-          {/* Attach menu — photo / video / document / voice. */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              disabled={inputsDisabled || busy}
-              title={
-                readOnly
-                  ? "Read-only — your role can't send messages"
-                  : inputsDisabled
-                    ? undefined
-                    : "Attach media"
-              }
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Paperclip className="h-4 w-4" />
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="border-border bg-popover">
-              <DropdownMenuItem onClick={() => imageInputRef.current?.click()}>
-                <ImageIcon className="mr-2 h-4 w-4" />
-                Photo
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => videoInputRef.current?.click()}>
-                <Video className="mr-2 h-4 w-4" />
-                Video
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => documentInputRef.current?.click()}>
-                <FileText className="mr-2 h-4 w-4" />
-                Document
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void startRecording()}>
-                <Mic className="mr-2 h-4 w-4" />
-                Voice note
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            title={readOnly ? undefined : "Send template"}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="h-4 w-4" />
-          </GatedButton>
-
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            disabled={drafting}
-            title={readOnly ? undefined : "Draft a reply with AI"}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-primary"
-            onClick={handleDraft}
-          >
-            {drafting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4" />
-            )}
-          </GatedButton>
-
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            title={readOnly ? undefined : "Saved replies (or type /)"}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-            onClick={openCannedPicker}
-          >
-            <MessageSquareText className="h-4 w-4" />
-          </GatedButton>
-
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            disabled={sessionExpired}
-            title={readOnly ? undefined : "Schedule for later"}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-            onClick={openSchedule}
-          >
-            <CalendarClock className="h-4 w-4" />
-          </GatedButton>
-
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              readOnly
-                ? "Read-only — viewers can browse but not reply"
-                : sessionExpired
-                  ? "Session expired - use a template"
-                  : "Type a message... (Shift+Enter for new line)"
-            }
-            disabled={sessionExpired || readOnly}
-            rows={1}
-            // Textarea keeps its own inline title — the GatedButton
-            // wrapping pattern doesn't apply to non-button inputs.
-            // The placeholder text also surfaces the read-only state.
-            title={readOnly ? "Read-only — your role can't send messages" : undefined}
+          {/* Teams-style composer box: text on top, a toolbar of actions
+              (formatting, emoji, attach, template, AI, saved replies,
+              schedule) + Send all INSIDE the box at the bottom. */}
+          <div
             className={cn(
-              "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
-              (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+              "flex flex-col rounded-xl border border-border bg-muted transition-colors focus-within:border-primary/50",
+              (sessionExpired || readOnly) && "opacity-70"
             )}
-          />
-
-          <GatedButton
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            disabled={!text.trim() || sessionExpired || sending}
-            onClick={handleSend}
-            className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >
-            <Send className="h-4 w-4" />
-          </GatedButton>
+            {/* Formatting bar — toggled by the "A" button. Maps to WhatsApp's
+                *bold*, _italic_, ~strike~, ```mono``` and - / 1. lists. */}
+            {formatBarOpen && !inputsDisabled && (
+              <div className="flex items-center gap-0.5 border-b border-border px-2 py-1">
+                <FormatButton title="Bold" onClick={() => wrapSelection("*", "*")}>
+                  <Bold className="h-3.5 w-3.5" />
+                </FormatButton>
+                <FormatButton title="Italic" onClick={() => wrapSelection("_", "_")}>
+                  <Italic className="h-3.5 w-3.5" />
+                </FormatButton>
+                <FormatButton
+                  title="Strikethrough"
+                  onClick={() => wrapSelection("~", "~")}
+                >
+                  <Strikethrough className="h-3.5 w-3.5" />
+                </FormatButton>
+                <FormatButton
+                  title="Monospace"
+                  onClick={() => wrapSelection("```", "```")}
+                >
+                  <Code className="h-3.5 w-3.5" />
+                </FormatButton>
+                <span className="mx-1 h-4 w-px bg-border" />
+                <FormatButton
+                  title="Bulleted list"
+                  onClick={() => prefixLines("bullet")}
+                >
+                  <List className="h-3.5 w-3.5" />
+                </FormatButton>
+                <FormatButton
+                  title="Numbered list"
+                  onClick={() => prefixLines("number")}
+                >
+                  <ListOrdered className="h-3.5 w-3.5" />
+                </FormatButton>
+              </div>
+            )}
+
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                readOnly
+                  ? "Read-only — viewers can browse but not reply"
+                  : sessionExpired
+                    ? "Session expired - use a template"
+                    : "Type a message... (Shift+Enter for new line)"
+              }
+              disabled={sessionExpired || readOnly}
+              rows={1}
+              title={readOnly ? "Read-only — your role can't send messages" : undefined}
+              className={cn(
+                "w-full resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 text-sm text-foreground placeholder-muted-foreground outline-none",
+                (sessionExpired || readOnly) && "cursor-not-allowed"
+              )}
+            />
+
+            {/* Bottom toolbar */}
+            <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
+              <button
+                type="button"
+                disabled={inputsDisabled}
+                title="Formatting"
+                onClick={() => setFormatBarOpen((o) => !o)}
+                className={cn(
+                  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50",
+                  formatBarOpen && "bg-accent text-foreground"
+                )}
+              >
+                <Type className="h-4 w-4" />
+              </button>
+
+              <EmojiPicker onPick={insertAtCursor} disabled={inputsDisabled} />
+
+              {/* Attach menu — photo / video / document / voice. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  disabled={inputsDisabled || busy}
+                  title={
+                    readOnly
+                      ? "Read-only — your role can't send messages"
+                      : inputsDisabled
+                        ? undefined
+                        : "Attach media"
+                  }
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Paperclip className="h-4 w-4" />
+                  )}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  side="top"
+                  className="border-border bg-popover"
+                >
+                  <DropdownMenuItem onClick={() => imageInputRef.current?.click()}>
+                    <ImageIcon className="mr-2 h-4 w-4" />
+                    Photo
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => videoInputRef.current?.click()}>
+                    <Video className="mr-2 h-4 w-4" />
+                    Video
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => documentInputRef.current?.click()}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Document
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void startRecording()}>
+                    <Mic className="mr-2 h-4 w-4" />
+                    Voice note
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <GatedButton
+                variant="ghost"
+                size="sm"
+                canAct={!readOnly}
+                gateReason="send messages"
+                title={readOnly ? undefined : "Send template"}
+                className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                onClick={onOpenTemplates}
+              >
+                <LayoutTemplate className="h-4 w-4" />
+              </GatedButton>
+
+              <GatedButton
+                variant="ghost"
+                size="sm"
+                canAct={!readOnly}
+                gateReason="send messages"
+                disabled={drafting}
+                title={readOnly ? undefined : "Draft a reply with AI"}
+                className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-primary"
+                onClick={handleDraft}
+              >
+                {drafting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+              </GatedButton>
+
+              <GatedButton
+                variant="ghost"
+                size="sm"
+                canAct={!readOnly}
+                gateReason="send messages"
+                title={readOnly ? undefined : "Saved replies (or type /)"}
+                className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                onClick={openCannedPicker}
+              >
+                <MessageSquareText className="h-4 w-4" />
+              </GatedButton>
+
+              <GatedButton
+                variant="ghost"
+                size="sm"
+                canAct={!readOnly}
+                gateReason="send messages"
+                disabled={sessionExpired}
+                title={readOnly ? undefined : "Schedule for later"}
+                className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                onClick={openSchedule}
+              >
+                <CalendarClock className="h-4 w-4" />
+              </GatedButton>
+
+              <div className="flex-1" />
+
+              <GatedButton
+                size="sm"
+                canAct={!readOnly}
+                gateReason="send messages"
+                disabled={!text.trim() || sessionExpired || sending}
+                onClick={handleSend}
+                className="h-8 w-8 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+              >
+                <Send className="h-4 w-4" />
+              </GatedButton>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Hint sits outside the flex row so its height doesn't push
-          `items-end` buttons below the textarea. Indented to line up
-          under the textarea left edge. */}
       {!draft && !recording && (
-        <p className="mt-1 pl-[5.5rem] text-[10px] text-muted-foreground">
-          Tap the ✨ to draft a reply with AI — you can edit it before sending
+        <p className="mt-1 px-1 text-[10px] text-muted-foreground">
+          Tap ✨ to draft with AI, or the A for formatting — you can edit before sending
         </p>
       )}
 
@@ -939,6 +1085,32 @@ export function MessageComposer({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/** A formatting-bar button. `onMouseDown` + preventDefault keeps the textarea
+ *  focused so the selection we're about to wrap isn't collapsed by a blur. */
+function FormatButton({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onClick();
+      }}
+      className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+    >
+      {children}
+    </button>
   );
 }
 
