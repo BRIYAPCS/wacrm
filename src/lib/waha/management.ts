@@ -124,11 +124,51 @@ export async function wahaQrImage(creds: WahaCreds): Promise<string | null> {
   // Any non-2xx (e.g. 422 when WORKING) → no QR to render.
   if (!res.ok) return null;
 
-  const json = (await res.json().catch(() => null)) as
-    | { mimetype?: string; data?: string }
-    | null;
-  if (!json?.data) return null;
-  return `data:${json.mimetype || "image/png"};base64,${json.data}`;
+  // WAHA content-negotiates this endpoint: JSON `{mimetype,data}` with an
+  // Accept: application/json, but a raw binary PNG by default. Handle both so
+  // we don't depend on header negotiation.
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const json = (await res.json().catch(() => null)) as
+      | { mimetype?: string; data?: string }
+      | null;
+    if (!json?.data) return null;
+    return `data:${json.mimetype || "image/png"};base64,${json.data}`;
+  }
+
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.byteLength === 0) return null;
+  return `data:${contentType || "image/png"};base64,${buf.toString("base64")}`;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Resolve a scannable state for the pairing UI, self-healing along the way.
+ * WhatsApp expires each QR quickly and GOWS drops the session to FAILED after
+ * a few unscanned cycles, so we:
+ *   • report `connected` once WORKING,
+ *   • (re)start a STOPPED/FAILED session,
+ *   • briefly wait for the QR to be minted after a (re)start,
+ * returning `qr: null` (still generating) rather than an error if it isn't
+ * ready yet — the client shows a "generating" state and polls again.
+ */
+export async function wahaScanState(
+  creds: WahaCreds,
+): Promise<{ connected: boolean; qr: string | null }> {
+  const st = await wahaSessionStatus(creds);
+  if (st.connected) return { connected: true, qr: null };
+  if (st.raw === "STOPPED" || st.raw === "FAILED") await wahaStartSession(creds);
+
+  // A freshly (re)started session needs a moment before the QR exists.
+  for (let i = 0; i < 4; i++) {
+    const qr = await wahaQrImage(creds);
+    if (qr) return { connected: false, qr };
+    const again = await wahaSessionStatus(creds);
+    if (again.connected) return { connected: true, qr: null };
+    if (i < 3) await sleep(700);
+  }
+  return { connected: false, qr: null };
 }
 
 /** Unlink the phone from the session (keeps the session, drops the pairing). */

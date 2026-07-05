@@ -12,11 +12,7 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { wsapiQrImage, wsapiSessionStatus } from "@/lib/wsapi/management";
 import { WsapiError } from "@/lib/wsapi/client";
-import {
-  wahaQrImage,
-  wahaSessionStatus,
-  wahaStartSession,
-} from "@/lib/waha/management";
+import { wahaScanState } from "@/lib/waha/management";
 import { wahaBaseUrl } from "@/lib/waha/config";
 import { WahaError } from "@/lib/waha/client";
 
@@ -40,17 +36,12 @@ export async function GET(
 
     try {
       if (row.provider === "waha") {
-        const creds = {
+        const state = await wahaScanState({
           baseUrl: wahaBaseUrl(row.base_url),
           apiKey: decrypt(row.access_token),
           session: row.waha_session as string,
-        };
-        const st = await wahaSessionStatus(creds);
-        if (st.connected) return NextResponse.json({ connected: true, qr: null });
-        // A stopped/failed session won't emit a QR — nudge it back to scanning.
-        if (st.raw === "STOPPED" || st.raw === "FAILED") await wahaStartSession(creds);
-        const qr = await wahaQrImage(creds);
-        return NextResponse.json({ connected: false, qr });
+        });
+        return NextResponse.json(state);
       }
 
       const creds = {
