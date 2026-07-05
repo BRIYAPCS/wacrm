@@ -4,8 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { useTotalUnread } from "@/hooks/use-total-unread";
+import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import { useNotificationPanel } from "@/hooks/use-notification-panel";
 import type { Notification } from "@/types";
-import { Bell, CheckCheck, Loader2, UserPlus, AtSign } from "lucide-react";
+import { Bell, CheckCheck, Loader2, UserPlus, AtSign, MessageSquare } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,6 +28,13 @@ export default function NotificationsPage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
+
+  // "New messages" — conversations with unread inbound messages, live.
+  // This is what the header bell's badge also counts, so the page and the
+  // bell stay consistent (a new message shows here, not just assignments).
+  const totalUnread = useTotalUnread();
+  const unreadAlerts = useUnreadNotifications();
+  const { messages } = useNotificationPanel(true, totalUnread + unreadAlerts);
 
   const load = useCallback(async () => {
     if (!accountId) return;
@@ -183,7 +193,7 @@ export default function NotificationsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Notifications</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Conversations other teammates assign to you show up here.
+            New messages and alerts (assignments, @mentions) show up here.
           </p>
         </div>
         <Button
@@ -201,20 +211,68 @@ export default function NotificationsPage() {
         </Button>
       </div>
 
-      {notifications.length === 0 ? (
+      {/* New messages — mirrors the header bell's "Messages" section. */}
+      {messages.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            New messages
+          </h2>
+          <ul className="space-y-2">
+            {messages.map((m) => (
+              <li key={m.conversationId}>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/inbox?c=${m.conversationId}`)}
+                  className="flex w-full items-start gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4 text-left transition-colors hover:border-primary/50"
+                >
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                    <MessageSquare className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-semibold text-foreground">
+                        {m.contactName}
+                      </span>
+                      <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                        {m.unreadCount > 9 ? "9+" : m.unreadCount}
+                      </span>
+                    </div>
+                    {m.lastMessageText && (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {m.lastMessageText}
+                      </p>
+                    )}
+                    {m.lastMessageAt && (
+                      <p className="mt-1 text-[11px] text-muted-foreground/70">
+                        {formatDistanceToNow(new Date(m.lastMessageAt), { addSuffix: true })}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {notifications.length > 0 && (
+            <h2 className="pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Alerts
+            </h2>
+          )}
+        </div>
+      )}
+
+      {messages.length === 0 && notifications.length === 0 ? (
         <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/40">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
             <Bell className="h-6 w-6 text-primary" />
           </div>
           <p className="mt-3 text-sm font-medium text-foreground">
-            No notifications yet
+            You&apos;re all caught up
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            You&apos;ll see an alert here when someone assigns you a
-            conversation.
+            New messages and assignment alerts will show up here.
           </p>
         </div>
-      ) : (
+      ) : notifications.length === 0 ? null : (
         <ul className="space-y-2">
           {notifications.map((n) => {
             const Icon = TYPE_ICON[n.type] ?? Bell;
