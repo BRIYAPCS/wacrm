@@ -9,6 +9,23 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.39.1] — 2026-07-05
+
+### Fixed
+
+- **Broadcast recipient count is accurate when excluding tags.** The Step-4
+  review and the final confirm dialog now subtract excluded-tag contacts (they
+  previously overstated the audience while the send reached the smaller, correct
+  set).
+
+### Docs
+
+- **DEPLOYMENT.md → "Scaling & production notes"** documents the two known
+  scale limits and their fixes: the per-process rate limiter (back it with a
+  shared store for multi-instance) and browser-driven dashboard broadcast
+  fan-out (route through the server-side path / a queue for very large sends).
+  Both are non-issues for a normal single-instance deploy.
+
 ## [0.39.0] — 2026-07-05
 
 ### Added

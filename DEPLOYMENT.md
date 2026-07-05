@@ -321,6 +321,35 @@ required"** or **"Setup required"** notes on the versions you're crossing.
 
 ---
 
+## Scaling & production notes
+
+The app runs correctly on a **single instance** out of the box. Two subsystems
+have known limits that only matter at larger scale — plan for them before you
+horizontally scale or send very large broadcasts:
+
+- **Rate limiter is per-process.** `src/lib/rate-limit.ts` keeps its buckets in
+  an in-memory `Map`. On a **single** Node instance this is exact. If you run
+  **multiple instances** (or a serverless platform that spins up many workers),
+  each has its own counters, so the effective AI-spend / broadcast / public-API
+  limits are multiplied by the instance count. **Fix for multi-instance:** back
+  the limiter with a shared store (Redis/Upstash or a Postgres table) — keep the
+  `checkRateLimit` return shape so call sites don't change.
+
+- **Dashboard broadcasts fan out from the browser.** The composer sends a
+  campaign in batches (10 recipients per request). This comfortably clears
+  campaigns up to **~500 recipients**; beyond that the per-user broadcast rate
+  limit throttles later batches (they're marked failed). The **public API**
+  (`POST /api/v1/broadcasts`) already fans out **server-side** via `after()` and
+  isn't affected. **Fix for large dashboard campaigns:** route the dashboard
+  send through the same server-side path (or a durable queue / cron drain) so
+  one campaign is one rate-limited call. Until then, split very large sends or
+  use the API.
+
+Neither blocks a normal single-instance deployment; both are called out so you
+can decide deliberately as you grow.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |
