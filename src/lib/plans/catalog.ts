@@ -11,10 +11,15 @@
 // tier *means* lives here — change pricing/packaging by editing this file.
 // ============================================================
 
-export type PlanTier = "basic" | "pro" | "advanced";
+export type PlanTier = "basic" | "pro" | "advanced" | "unlimited";
 
 /** Lowest tier first. */
-export const PLAN_TIERS: readonly PlanTier[] = ["basic", "pro", "advanced"] as const;
+export const PLAN_TIERS: readonly PlanTier[] = [
+  "basic",
+  "pro",
+  "advanced",
+  "unlimited",
+] as const;
 
 /** Whole feature modules a tier can switch on/off. */
 export type FeatureKey =
@@ -86,7 +91,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     },
     limits: {
       seats: 10,
-      whatsapp_numbers: 3,
+      whatsapp_numbers: 5,
       contacts: 25_000,
       api_keys: 0,
       kb_documents: 50,
@@ -107,9 +112,9 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       reports: true,
     },
     limits: {
-      seats: UNLIMITED,
-      whatsapp_numbers: UNLIMITED,
-      contacts: UNLIMITED,
+      seats: 25,
+      whatsapp_numbers: 10,
+      contacts: 100_000,
       api_keys: 10,
       kb_documents: UNLIMITED,
       kb_bytes: UNLIMITED,
@@ -117,10 +122,36 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       pipelines: UNLIMITED,
     },
   },
+  unlimited: {
+    features: {
+      ai: true,
+      flows: true,
+      automations: true,
+      public_api: true,
+      multi_number: true,
+      broadcasts: true,
+      audit_log: true,
+      reports: true,
+    },
+    limits: {
+      seats: UNLIMITED,
+      whatsapp_numbers: UNLIMITED,
+      contacts: UNLIMITED,
+      api_keys: UNLIMITED,
+      kb_documents: UNLIMITED,
+      kb_bytes: UNLIMITED,
+      broadcast_recipients: UNLIMITED,
+      pipelines: UNLIMITED,
+    },
+  },
 };
 
-/** The tier existing/unknown accounts fall back to (fail-open — see plan). */
-export const DEFAULT_TIER: PlanTier = "advanced";
+/**
+ * The tier existing/unknown accounts fall back to (fail-open — see plan).
+ * `unlimited` so a self-hosted single-instance deploy (plan = NULL) is never
+ * capped; the named paid tiers are the caps.
+ */
+export const DEFAULT_TIER: PlanTier = "unlimited";
 
 export function isPlanTier(value: unknown): value is PlanTier {
   return typeof value === "string" && (PLAN_TIERS as readonly string[]).includes(value);
@@ -135,6 +166,8 @@ export function planRank(tier: PlanTier): number {
       return 2;
     case "advanced":
       return 3;
+    case "unlimited":
+      return 4;
   }
 }
 
@@ -143,4 +176,5 @@ export const PLAN_LABELS: Record<PlanTier, string> = {
   basic: "Basic",
   pro: "Pro",
   advanced: "Advanced",
+  unlimited: "Unlimited",
 };

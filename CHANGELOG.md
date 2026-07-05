@@ -9,6 +9,29 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.33.0] — 2026-07-05
+
+New **Unlimited** tier + WhatsApp-number caps that scale by plan.
+**Migration required:** apply `supabase/migrations/053_plan_unlimited.sql`.
+
+### Changed
+
+- Added a fourth tier, **Unlimited** — every feature on, every limit
+  uncapped (WhatsApp numbers, contacts, seats, everything). Shows up
+  automatically in the superadmin plan picker and the Plan & billing
+  comparison.
+- **WhatsApp numbers now scale by plan**: Basic **1**, Pro **5**, Advanced
+  **10**, Unlimited **∞** (counted across all providers). Provisioning a
+  number in the superadmin console enforces this cap; raise it by moving the
+  account up a tier or adding a `whatsapp_numbers` override.
+- The fail-open default tier is now **Unlimited**, so a self-hosted
+  single-instance deploy (no plan set) is never capped.
+
+### Notes
+
+- You can connect **multiple accounts of the same provider** (e.g. several
+  wsapi.chat instances) — each is its own number and counts toward the cap.
+
 ## [0.32.0] — 2026-07-05
 
 WhatsApp providers are now **managed by the platform owner and hidden from
