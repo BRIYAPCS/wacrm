@@ -33,6 +33,7 @@
  */
 
 import { supabaseAdmin } from "./admin-client";
+import { resolveAccountEntitlements } from "@/lib/plans/resolve-account";
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
@@ -856,6 +857,12 @@ export async function dispatchInboundToFlows(
 ): Promise<DispatchInboundResult> {
   const db = supabaseAdmin();
   try {
+    // Plan gate at RUNTIME: flows only run on plans that include them (covers
+    // a downgrade with a pre-existing active flow).
+    if (!(await resolveAccountEntitlements(db, input.accountId)).features.has("flows")) {
+      return { consumed: false, outcome: "no_match" };
+    }
+
     const activeRun = await loadActiveRunForContact(
       db,
       input.accountId,

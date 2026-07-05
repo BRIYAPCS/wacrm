@@ -9,6 +9,30 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.38.0] — 2026-07-05
+
+**Server-side plan enforcement.** Subscription tiers are now enforced on the
+server/runtime, not just the UI — a lower-tier account can't use paid modules or
+exceed caps via direct API calls. **Migration required:** apply
+`supabase/migrations/056_plan_limit_triggers.sql`.
+
+### Added
+
+- **Runtime feature gates** — the AI auto-reply, Flow runner, and Automations
+  engine now resolve the account's plan on every inbound and stand down when the
+  feature isn't included. This also handles a **downgrade**: a pre-existing
+  active flow/automation/AI-config stops running once the plan drops it.
+- **Route feature gates** — `reports`, the `audit_log`, and flow-run are gated
+  with `requireFeature` (403 + upgrade code for non-entitled accounts).
+- **`broadcast_recipients` plan cap** is enforced on the public broadcast API
+  (was a hardcoded 1,000 for every tier).
+- **Knowledge-base document cap** (`kb_documents`) enforced on upload + URL add.
+- **`contacts` and `pipelines` caps** enforced via DB triggers for the
+  dashboard's client-side inserts (the inbound/service-role path is exempt so a
+  customer messaging in is never dropped).
+- Template broadcasts (public API core) also reject a non-Meta default number
+  rather than sending its secret to Meta.
+
 ## [0.37.2] — 2026-07-05
 
 ### Fixed (deep-audit batch)
