@@ -199,14 +199,20 @@ export async function POST(request: Request) {
   const p = body.payload;
   const from = p.from ?? "";
   const isGroup = from.endsWith("@g.us");
+  // WhatsApp Status/Stories ("status@broadcast"), broadcast lists ("@broadcast")
+  // and channels ("@newsletter") are not 1:1 chats and have no real phone —
+  // ingesting them creates junk conversations that can't be replied to
+  // ("Invalid phone number format" on send). Treat them like groups: skip.
+  const isNonChat = from.endsWith("@broadcast") || from.endsWith("@newsletter");
   const text = (p.body ?? "").trim();
   // Media (photo/voice/document/…) may arrive with an empty body — surface a
   // marker so it lands in the inbox instead of being silently dropped. A
   // caption, when present, is used as-is.
   const effectiveText = text || inboundMediaMarker(p.type, p.hasMedia) || "";
 
-  // Ignore our own echoes, group chats, and truly-empty/no-sender events.
-  if (p.fromMe || !from || isGroup || !effectiveText) {
+  // Ignore our own echoes, group chats, status/channel broadcasts, and
+  // truly-empty/no-sender events.
+  if (p.fromMe || !from || isGroup || isNonChat || !effectiveText) {
     return NextResponse.json({ received: true, ignored: "not-an-inbound-message" });
   }
 

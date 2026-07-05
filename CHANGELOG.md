@@ -9,6 +9,16 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.41.2] — 2026-07-05
+
+### Fixed
+
+- **WhatsApp Status/channel updates no longer create junk conversations.** The
+  WAHA webhook ingested `status@broadcast` (Stories), broadcast lists, and
+  `@newsletter` channels as if they were 1:1 chats. They have no real phone, so
+  opening one and sending failed with "Invalid phone number format." These
+  addresses are now skipped at ingest, alongside group chats.
+
 ## [0.41.1] — 2026-07-05
 
 Deep full-app audit (4 parallel review passes) + fixes. No migration required.
