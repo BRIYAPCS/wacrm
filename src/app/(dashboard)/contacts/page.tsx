@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
@@ -50,6 +51,7 @@ import {
   X,
   Tag as TagIcon,
   Download,
+  Megaphone,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -67,6 +69,7 @@ interface ContactWithTags extends Contact {
 
 export default function ContactsPage() {
   const supabase = createClient();
+  const router = useRouter();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
 
@@ -406,6 +409,60 @@ export default function ContactsPage() {
     toast.success(`Exported ${rows.length} contact${rows.length === 1 ? '' : 's'}`);
   }
 
+  // Strip a tag from every selected contact. No-op for contacts that don't
+  // have it. Updates the visible chips in place so the selection survives.
+  async function removeBulkTag(tagId: string) {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBulkTagging(true);
+
+    const { error } = await supabase
+      .from('contact_tags')
+      .delete()
+      .in('contact_id', ids)
+      .eq('tag_id', tagId);
+
+    setBulkTagging(false);
+    if (error) {
+      toast.error('Failed to remove tag');
+      return;
+    }
+
+    setContacts((prev) =>
+      prev.map((c) =>
+        selected.has(c.id)
+          ? { ...c, tags: (c.tags ?? []).filter((t) => t.id !== tagId) }
+          : c,
+      ),
+    );
+    const tag = tagsMap[tagId];
+    toast.success(
+      `Removed ${tag ? `"${tag.name}"` : 'tag'} from ${ids.length} contact${ids.length === 1 ? '' : 's'}`,
+    );
+  }
+
+  // Start a broadcast targeted at exactly the selected contacts. The composer
+  // reads this pre-seed on mount and lands on a CSV audience (see
+  // broadcasts/new). Phones are required to receive, so drop any without one.
+  function broadcastToSelected() {
+    const rows = contacts.filter((c) => selected.has(c.id) && c.phone);
+    if (rows.length === 0) {
+      toast.error('None of the selected contacts have a phone number.');
+      return;
+    }
+    const csvContacts = rows.map((c) => ({
+      phone: c.phone,
+      name: c.name || undefined,
+    }));
+    try {
+      sessionStorage.setItem('broadcast:preseed', JSON.stringify(csvContacts));
+    } catch {
+      toast.error('Could not start the broadcast.');
+      return;
+    }
+    router.push('/broadcasts/new');
+  }
+
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const hasNext = page < totalPages - 1;
   const hasPrev = page > 0;
@@ -627,19 +684,17 @@ export default function ContactsPage() {
                   )}
                   Tag
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-56 p-0">
-                  <div className="px-3 py-2 border-b border-border">
-                    <span className="text-sm font-medium text-popover-foreground">
-                      Apply a tag
-                    </span>
-                  </div>
-                  <div className="max-h-64 overflow-y-auto py-1">
+                <PopoverContent align="end" className="w-60 p-0">
+                  <div className="max-h-72 overflow-y-auto py-1">
+                    <p className="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Add tag
+                    </p>
                     {allTags.map((tag) => (
                       <button
-                        key={tag.id}
+                        key={`add-${tag.id}`}
                         onClick={() => applyBulkTag(tag.id)}
                         disabled={bulkTagging}
-                        className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left hover:bg-muted/50 disabled:opacity-50"
+                        className="group flex w-full items-center gap-2.5 px-3 py-1.5 text-left hover:bg-muted/50 disabled:opacity-50"
                       >
                         <span
                           className="size-2.5 shrink-0 rounded-full"
@@ -648,12 +703,47 @@ export default function ContactsPage() {
                         <span className="text-sm text-popover-foreground truncate">
                           {tag.name}
                         </span>
+                        <Plus className="ml-auto size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" />
+                      </button>
+                    ))}
+                    <div className="my-1 border-t border-border" />
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Remove tag
+                    </p>
+                    {allTags.map((tag) => (
+                      <button
+                        key={`rm-${tag.id}`}
+                        onClick={() => removeBulkTag(tag.id)}
+                        disabled={bulkTagging}
+                        className="group flex w-full items-center gap-2.5 px-3 py-1.5 text-left hover:bg-destructive/10 disabled:opacity-50"
+                      >
+                        <span
+                          className="size-2.5 shrink-0 rounded-full opacity-60"
+                          style={{ backgroundColor: tag.color }}
+                        />
+                        <span className="text-sm text-muted-foreground truncate">
+                          {tag.name}
+                        </span>
+                        <X className="ml-auto size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" />
                       </button>
                     ))}
                   </div>
                 </PopoverContent>
               </Popover>
             )}
+
+            {/* Broadcast to exactly these contacts (pre-seeds the composer). */}
+            <GatedButton
+              variant="outline"
+              size="sm"
+              canAct={canEdit}
+              gateReason="start a broadcast"
+              onClick={broadcastToSelected}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              <Megaphone className="size-4" />
+              Broadcast
+            </GatedButton>
 
             {/* Export the selected rows to CSV — read-only, no gate. */}
             <Button

@@ -9,6 +9,15 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.37.0] — 2026-07-05
+
+### Added
+
+- **More Contacts bulk actions.** The selection bar now also offers **Remove
+  tag** (strip a tag from every selected contact — the Tag menu has Add and
+  Remove sections) and **Broadcast** (start a broadcast targeted at exactly the
+  selected contacts; the composer opens with them pre-loaded as the audience).
+
 ## [0.36.0] — 2026-07-05
 
 ### Added
