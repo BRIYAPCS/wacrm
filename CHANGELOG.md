@@ -9,6 +9,16 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.36.0] — 2026-07-05
+
+### Added
+
+- **Bulk actions on the Contacts list.** Selecting contacts (the first-column
+  checkboxes) now offers, alongside **Delete**, two more actions in the
+  selection bar: **Tag** (apply an existing tag to every selected contact,
+  idempotent) and **Export** (download the selected rows as a CSV, with
+  formula-injection guarding). Select-all and per-row delete were already there.
+
 ## [0.35.2] — 2026-07-05
 
 ### Fixed
