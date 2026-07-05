@@ -46,6 +46,8 @@ export async function findExistingContact(
     .from("contacts")
     .select("*")
     .eq("account_id", accountId)
+    // Groups are keyed by a JID, not a person's number — never match them here.
+    .eq("is_group", false)
     .like("phone", `%${suffix}`);
 
   if (error || !data) return null;

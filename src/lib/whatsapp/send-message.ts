@@ -236,14 +236,19 @@ export async function sendMessageToConversation(
     );
   }
 
+  // A group is a contact keyed by its JID (…@g.us). WAHA sends to that JID
+  // directly (toChatId passes it through), so it skips E.164 validation; the
+  // recipient is the JID rather than the sanitized digits.
+  const isGroup = contact.is_group === true || contact.phone.endsWith('@g.us');
   const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
-  if (!isValidE164(sanitizedPhone)) {
+  if (!isGroup && !isValidE164(sanitizedPhone)) {
     throw new SendMessageError(
       'bad_request',
       'Invalid phone number format',
       400
     );
   }
+  const recipient = isGroup ? contact.phone : sanitizedPhone;
 
   // WhatsApp config — the number this conversation is on (multi-number:
   // reply from the same number the customer messaged), falling back to
@@ -256,6 +261,16 @@ export async function sendMessageToConversation(
     throw new SendMessageError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
+      400
+    );
+  }
+
+  // Group chats only exist on WAHA (that's the only engine that ingests them).
+  // A group conversation should never route to Meta/Twilio/WSAPI.
+  if (isGroup && config.provider !== 'waha') {
+    throw new SendMessageError(
+      'bad_request',
+      'Group chats can only be messaged from a WAHA number.',
       400
     );
   }
@@ -374,9 +389,9 @@ export async function sendMessageToConversation(
             400,
           );
         }
-        wahaId = (await wahaSendImage(creds, sanitizedPhone, mediaUrl, contentText || undefined)).messageId;
+        wahaId = (await wahaSendImage(creds, recipient, mediaUrl, contentText || undefined)).messageId;
       } else if (messageType === 'text') {
-        wahaId = (await wahaSendText(creds, sanitizedPhone, contentText!)).messageId;
+        wahaId = (await wahaSendText(creds, recipient, contentText!)).messageId;
       } else {
         throw new SendMessageError(
           'bad_request',

@@ -9,7 +9,7 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import { Search, ChevronDown, X, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Input } from "@/components/ui/input";
 import {
@@ -494,7 +494,10 @@ function ConversationItem({
   snippet,
 }: ConversationItemProps) {
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || "Unknown";
+  const isGroup = contact?.is_group === true || !!contact?.phone?.endsWith("@g.us");
+  const displayName = isGroup
+    ? contact?.name || "Group chat"
+    : contact?.name || contact?.phone || "Unknown";
   const initials = displayName.charAt(0).toUpperCase();
 
   const handleClick = useCallback(() => {
@@ -524,6 +527,8 @@ function ConversationItem({
             alt={displayName}
             className="h-10 w-10 rounded-full object-cover"
           />
+        ) : isGroup ? (
+          <Users className="h-5 w-5" />
         ) : (
           initials
         )}

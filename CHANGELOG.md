@@ -9,6 +9,24 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.42.0] — 2026-07-05
+
+### Added
+
+- **Group chats in the inbox** (WAHA numbers). Group conversations now flow into
+  the shared inbox alongside 1:1 chats — for every tier. Each inbound message is
+  attributed to the participant who sent it (name shown above the bubble and in
+  the list preview), the thread header shows the group subject with a group
+  icon, and replies are **two-way**: the composer carries a "posts to everyone
+  in the group" note and sends to the whole group.
+
+  **Migration required:** apply `supabase/migrations/058_group_chats.sql`
+  (adds `contacts.is_group` and `messages.sender_phone` / `sender_name`).
+
+  Groups are inbox-only: they're excluded from the Contacts list, contact
+  de-duplication, and broadcasts (a group is not a person with a number).
+  Group support is WAHA-only — Meta/Twilio don't deliver group messages here.
+
 ## [0.41.2] — 2026-07-05
 
 ### Fixed

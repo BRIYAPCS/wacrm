@@ -22,6 +22,7 @@ import {
   Sparkles,
   MessageSquareText,
   CalendarClock,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -115,6 +116,8 @@ interface MediaDraft {
 interface MessageComposerProps {
   conversationId: string;
   sessionExpired: boolean;
+  /** Group thread: warn that a reply posts to every member. */
+  isGroup?: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onOpenTemplates: () => void;
@@ -139,6 +142,7 @@ const OPUS_ENCODER_PATH = "/opus/encoderWorker.min.js";
 export function MessageComposer({
   conversationId,
   sessionExpired,
+  isGroup,
   onSend,
   onSendMedia,
   onOpenTemplates,
@@ -617,6 +621,14 @@ export function MessageComposer({
             preview={replyTo.preview}
             onDismiss={onClearReply}
           />
+        </div>
+      )}
+      {isGroup && !sessionExpired && (
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-muted/60 px-3 py-1.5">
+          <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <p className="text-xs text-muted-foreground">
+            This posts to everyone in the group.
+          </p>
         </div>
       )}
       {sessionExpired && (
