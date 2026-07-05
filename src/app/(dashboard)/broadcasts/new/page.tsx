@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -38,7 +38,39 @@ export default function NewBroadcastPage() {
     };
     csvContacts?: { phone: string; name?: string }[];
     excludeTagIds?: string[];
-  }>({ type: 'all' });
+  }>(() => {
+    // Pre-seed from a "Broadcast to selected" action on the Contacts page.
+    // Guarded by typeof window (never runs on the server); reading it here
+    // rather than in an effect avoids a flash of the default audience.
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem('broadcast:preseed');
+        if (raw) {
+          sessionStorage.removeItem('broadcast:preseed');
+          const csvContacts = JSON.parse(raw) as { phone: string; name?: string }[];
+          if (Array.isArray(csvContacts) && csvContacts.length > 0) {
+            return { type: 'csv' as const, csvContacts };
+          }
+        }
+      } catch {
+        /* ignore a malformed pre-seed */
+      }
+    }
+    return { type: 'all' as const };
+  });
+
+  // Tell the user their selection carried over (only fires for a pre-seed).
+  useEffect(() => {
+    if (audience.type === 'csv' && audience.csvContacts?.length) {
+      toast.success(
+        `Audience set to ${audience.csvContacts.length} selected contact${
+          audience.csvContacts.length === 1 ? '' : 's'
+        }.`,
+      );
+    }
+    // Mount-only — the pre-seed is consumed on first render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [variables, setVariables] = useState<
     Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>
   >({});
