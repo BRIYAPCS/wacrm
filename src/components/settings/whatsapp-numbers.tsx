@@ -29,7 +29,10 @@ import {
 
 interface NumberRow {
   id: string;
-  phone_number_id: string;
+  provider: 'meta' | 'wsapi';
+  phone_number_id: string | null;
+  wsapi_instance_id: string | null;
+  phone_number: string | null;
   waba_id: string | null;
   label: string | null;
   is_default: boolean;
@@ -37,6 +40,17 @@ interface NumberRow {
   registered_at: string | null;
   connected_at: string | null;
   last_registration_error: string | null;
+}
+
+/** A short identifier line for a number, provider-aware. */
+function subtitleFor(row: NumberRow): string {
+  if (row.provider === 'wsapi') {
+    const who = row.phone_number ?? `…${(row.wsapi_instance_id ?? '').slice(-6)}`;
+    return `wsapi.chat · ${who}`;
+  }
+  return `Meta · ID …${(row.phone_number_id ?? '').slice(-6)}${
+    row.last_registration_error ? ' · registration incomplete' : ''
+  }`;
 }
 
 function notifyChanged() {
@@ -107,7 +121,7 @@ export function WhatsAppNumbers() {
   };
 
   const remove = async (row: NumberRow) => {
-    const name = row.label || `…${row.phone_number_id.slice(-4)}`;
+    const name = row.label || 'this number';
     if (
       !window.confirm(
         `Remove "${name}"? Conversations on this number stay in the inbox but you won't be able to reply from it until it's reconnected.`,
@@ -116,9 +130,13 @@ export function WhatsAppNumbers() {
       return;
     setBusyId(row.id);
     try {
-      const res = await fetch(`/api/whatsapp/config?id=${encodeURIComponent(row.id)}`, {
-        method: 'DELETE',
-      });
+      // WSAPI rows log out + delete via their own endpoint; Meta rows use
+      // the shared config DELETE.
+      const url =
+        row.provider === 'wsapi'
+          ? `/api/whatsapp/wsapi/${encodeURIComponent(row.id)}`
+          : `/api/whatsapp/config?id=${encodeURIComponent(row.id)}`;
+      const res = await fetch(url, { method: 'DELETE' });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? 'Failed');
       toast.success('Number removed');
       await load();
@@ -190,11 +208,13 @@ export function WhatsAppNumbers() {
                         <Star className="h-3 w-3" /> Default
                       </span>
                     )}
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {row.provider === 'wsapi' ? 'wsapi.chat' : 'Meta'}
+                    </span>
                   </div>
                 )}
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  ID …{row.phone_number_id.slice(-6)}
-                  {row.last_registration_error ? ' · registration incomplete' : ''}
+                  {subtitleFor(row)}
                 </p>
               </div>
 

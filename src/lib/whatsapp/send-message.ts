@@ -36,6 +36,7 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
+import { wsapiSendText, wsapiSendImage, WsapiError } from '@/lib/wsapi/client';
 import type { MessageTemplate } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 
@@ -251,6 +252,90 @@ export async function sendMessageToConversation(
       400
     );
   }
+
+  // --- Provider routing: wsapi.chat numbers send via WSAPI ---------------
+  // The resolved config row decides the transport. Meta rows fall through
+  // to the Meta plumbing below. WSAPI rows send here and return.
+  if (config.provider === 'wsapi') {
+    const creds = {
+      instanceId: config.wsapi_instance_id as string,
+      apiKey: decrypt(config.access_token),
+    };
+    // Stamp the thread's number (same as the Meta path does below).
+    if (!conversation.whatsapp_config_id) {
+      void db
+        .from('conversations')
+        .update({ whatsapp_config_id: config.id })
+        .eq('id', conversationId);
+    }
+
+    let wsId: string | null = null;
+    try {
+      if (isMediaKind) {
+        if (messageType !== 'image' || !mediaUrl) {
+          throw new SendMessageError(
+            'bad_request',
+            'wsapi.chat numbers support text and image messages only.',
+            400,
+          );
+        }
+        wsId = (await wsapiSendImage(creds, sanitizedPhone, mediaUrl, contentText || undefined)).messageId;
+      } else if (messageType === 'text') {
+        wsId = (await wsapiSendText(creds, sanitizedPhone, contentText!)).messageId;
+      } else {
+        throw new SendMessageError(
+          'bad_request',
+          'wsapi.chat numbers support text and image only (templates need a Meta number).',
+          400,
+        );
+      }
+    } catch (err) {
+      if (err instanceof SendMessageError) throw err;
+      if (err instanceof WsapiError) {
+        throw new SendMessageError('wsapi_error', err.message, err.status);
+      }
+      throw new SendMessageError(
+        'wsapi_error',
+        err instanceof Error ? err.message : 'WSAPI send failed',
+        502,
+      );
+    }
+
+    const { data: row, error: insErr } = await db
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_type: 'agent',
+        sender_id: senderId || null,
+        content_type: messageType,
+        content_text: contentText || null,
+        media_url: mediaUrl || null,
+        message_id: wsId || `wsapi-out-${conversationId}-${Date.now()}`,
+        status: 'sent',
+        reply_to_message_id: replyToMessageId || null,
+      })
+      .select('id')
+      .single();
+    if (insErr || !row) {
+      throw new SendMessageError(
+        'db_error',
+        `Sent via WSAPI but failed to save: ${insErr?.message}`,
+        500,
+      );
+    }
+
+    await db
+      .from('conversations')
+      .update({
+        last_message_text: contentText || `[${messageType}]`,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId);
+
+    return { messageId: row.id, whatsappMessageId: wsId || '' };
+  }
+  // --- end provider routing ----------------------------------------------
 
   // Remember which number this thread went out on, so future replies (and
   // the inbox badge) stay consistent even before the next inbound.
