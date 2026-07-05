@@ -9,6 +9,13 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.40.3] — 2026-07-05
+
+### Added
+
+- **Show/hide password toggle** (eye icon) on every password field — Login,
+  Sign-up, Accept-invite, and Change-password — via a reusable `PasswordInput`.
+
 ## [0.40.2] — 2026-07-05
 
 ### Fixed
