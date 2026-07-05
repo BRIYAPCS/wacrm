@@ -10,6 +10,7 @@ import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
+import { resolveAccountEntitlements } from '@/lib/plans/resolve-account'
 
 async function requireUser() {
   const supabase = await createClient()
@@ -17,6 +18,34 @@ async function requireUser() {
     data: { user },
   } = await supabase.auth.getUser()
   return user
+}
+
+// Resolve the caller's account and confirm their plan includes Automations.
+// Returns a 403 response to short-circuit the handler, or null to proceed.
+async function requireAutomationsEntitlement(
+  db: ReturnType<typeof supabaseAdmin>,
+  userId: string,
+): Promise<NextResponse | null> {
+  const { data: profile } = await db
+    .from('profiles')
+    .select('account_id')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const accountId = profile?.account_id as string | undefined
+  if (!accountId) {
+    return NextResponse.json(
+      { error: 'Your profile is not linked to an account.' },
+      { status: 403 },
+    )
+  }
+  const entitlements = await resolveAccountEntitlements(db, accountId)
+  if (!entitlements.features.has('automations')) {
+    return NextResponse.json(
+      { error: "Automations isn't included in your plan.", code: 'plan_upgrade_required' },
+      { status: 403 },
+    )
+  }
+  return null
 }
 
 export async function GET(
@@ -28,6 +57,9 @@ export async function GET(
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const admin = supabaseAdmin()
+  const gate = await requireAutomationsEntitlement(admin, user.id)
+  if (gate) return gate
+
   const { data: automation, error } = await admin
     .from('automations')
     .select('*')
@@ -54,6 +86,9 @@ export async function PATCH(
   if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
   const admin = supabaseAdmin()
+
+  const gate = await requireAutomationsEntitlement(admin, user.id)
+  if (gate) return gate
 
   // Ownership check before we touch anything. Load the fields we need
   // to compute the post-patch "effective" state for validation.
@@ -128,7 +163,11 @@ export async function DELETE(
   const user = await requireUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { error } = await supabaseAdmin()
+  const admin = supabaseAdmin()
+  const gate = await requireAutomationsEntitlement(admin, user.id)
+  if (gate) return gate
+
+  const { error } = await admin
     .from('automations')
     .delete()
     .eq('id', id)

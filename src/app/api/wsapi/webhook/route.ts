@@ -14,7 +14,7 @@ import { NextResponse, after } from "next/server";
 import crypto from "node:crypto";
 
 import { jidToPhone } from "@/lib/wsapi/config";
-import { ingestInboundMessage } from "@/lib/whatsapp/ingest-inbound";
+import { ingestInboundMessage, inboundMediaMarker } from "@/lib/whatsapp/ingest-inbound";
 import { enrichContactFromWsapi } from "@/lib/wsapi/profile";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -67,6 +67,25 @@ function extract(d: Record<string, unknown>) {
     (d.body as string) ??
     "";
 
+  // Message type, so a media message (no caption) is surfaced with a marker
+  // rather than dropped. Prefer the real WSAPI `type`; else infer from the
+  // Baileys-shaped message keys.
+  const type =
+    (d.type as string) ??
+    (message.imageMessage
+      ? "image"
+      : message.videoMessage
+        ? "video"
+        : message.audioMessage || message.pttMessage
+          ? "audio"
+          : message.documentMessage
+            ? "document"
+            : message.stickerMessage
+              ? "sticker"
+              : message.locationMessage
+                ? "location"
+                : undefined);
+
   // `time` is an ISO string on the real shape; `messageTimestamp` is unix
   // seconds on the Baileys shape.
   let timestampSec: number;
@@ -83,7 +102,7 @@ function extract(d: Record<string, unknown>) {
           : Math.floor(Date.now() / 1000);
   }
 
-  return { remoteJid, fromMe, id, isGroup, pushName, text, timestampSec };
+  return { remoteJid, fromMe, id, isGroup, pushName, text, type, timestampSec };
 }
 
 export async function POST(request: Request) {
@@ -136,10 +155,13 @@ export async function POST(request: Request) {
   }
 
   const m = extract(body.eventData);
+  // Media (photo/voice/document/…) may arrive with no caption — surface a
+  // marker so it lands in the inbox instead of being dropped.
+  const effectiveText = m.text.trim() || inboundMediaMarker(m.type) || "";
 
   // Ignore our own outbound echoes, group messages, and empty/no-JID events.
-  if (m.fromMe || !m.remoteJid || m.isGroup || !m.text.trim()) {
-    return NextResponse.json({ received: true, ignored: "not-an-inbound-text" });
+  if (m.fromMe || !m.remoteJid || m.isGroup || !effectiveText) {
+    return NextResponse.json({ received: true, ignored: "not-an-inbound-message" });
   }
 
   try {
@@ -150,7 +172,7 @@ export async function POST(request: Request) {
       configId: cfg.id,
       phone,
       name: m.pushName,
-      text: m.text,
+      text: effectiveText,
       messageId: m.id || `wsapi-${Date.now()}`,
       timestampSec: m.timestampSec,
     });

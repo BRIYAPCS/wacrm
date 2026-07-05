@@ -16,7 +16,7 @@
 import { NextResponse, after } from "next/server";
 import crypto from "node:crypto";
 
-import { ingestInboundMessage } from "@/lib/whatsapp/ingest-inbound";
+import { ingestInboundMessage, inboundMediaMarker } from "@/lib/whatsapp/ingest-inbound";
 import { enrichContactFromWaha } from "@/lib/waha/profile";
 import { chatIdToPhone, wahaBaseUrl, wahaWebhookHmacKey } from "@/lib/waha/config";
 import { decrypt } from "@/lib/whatsapp/encryption";
@@ -41,6 +41,8 @@ interface MessagePayload {
   fromMe?: boolean;
   body?: string;
   hasMedia?: boolean;
+  /** WAHA message type: chat|image|video|audio|ptt|document|sticker|location… */
+  type?: string;
   notifyName?: string;
   _data?: {
     notifyName?: string;
@@ -137,10 +139,14 @@ export async function POST(request: Request) {
   const from = p.from ?? "";
   const isGroup = from.endsWith("@g.us");
   const text = (p.body ?? "").trim();
+  // Media (photo/voice/document/…) may arrive with an empty body — surface a
+  // marker so it lands in the inbox instead of being silently dropped. A
+  // caption, when present, is used as-is.
+  const effectiveText = text || inboundMediaMarker(p.type, p.hasMedia) || "";
 
-  // Ignore our own echoes, group chats, and empty/no-sender events.
-  if (p.fromMe || !from || isGroup || !text) {
-    return NextResponse.json({ received: true, ignored: "not-an-inbound-text" });
+  // Ignore our own echoes, group chats, and truly-empty/no-sender events.
+  if (p.fromMe || !from || isGroup || !effectiveText) {
+    return NextResponse.json({ received: true, ignored: "not-an-inbound-message" });
   }
 
   try {
@@ -168,7 +174,7 @@ export async function POST(request: Request) {
       configId: cfg.id,
       phone,
       name,
-      text,
+      text: effectiveText,
       messageId: p.id || `waha-${Date.now()}`,
       timestampSec:
         typeof p.timestamp === "number" ? p.timestamp : Math.floor(Date.now() / 1000),

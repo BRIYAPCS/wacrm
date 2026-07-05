@@ -9,6 +9,29 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.39.0] — 2026-07-05
+
+### Added
+
+- **Inbound media isn't dropped anymore.** A photo / voice note / document /
+  sticker / location sent to a WAHA or wsapi.chat number now lands in the inbox
+  with a clear marker (e.g. "📷 Photo", "🎤 Voice message") and its caption when
+  present, instead of being silently discarded. (Downloading/previewing the
+  actual media file is a follow-up.)
+
+### Changed
+
+- **Plan enforcement completed** — the remaining Flows and Automations API
+  routes (create/edit/delete/activate/duplicate/list) now enforce the plan
+  feature server-side, closing the last direct-API backdoor around the tier.
+
+### Fixed
+
+- **Inbox: rapid double-send** no longer briefly hides the second bubble (a
+  confirming realtime row now clears one pending optimistic message, not all).
+- **Inbox: list refresh** no longer flashes the open conversation's unread badge
+  back after you've read it (the resync merges instead of replacing).
+
 ## [0.38.1] — 2026-07-05
 
 ### Fixed (inbox correctness)

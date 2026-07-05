@@ -219,18 +219,22 @@ export default function InboxPage() {
           setMessages((prev) => {
             // Avoid duplicates
             if (prev.some((m) => m.id === newMsg.id)) return prev;
-            // Only an OUTBOUND real row confirms an optimistic send — clear
-            // the pending temp bubbles then. An inbound customer message
-            // must NOT remove the agent's in-flight/failed bubbles (that
-            // made failed sends silently vanish when a reply arrived).
-            // Failed temps are always kept so the agent can see/retry them.
+            // A confirming OUTBOUND row clears exactly ONE pending optimistic
+            // temp (the oldest) — not all of them: two quick sends would
+            // otherwise make the second bubble vanish until its own row lands.
+            // Inbound customer messages never remove agent bubbles, and failed
+            // temps are always kept so the agent can see/retry them.
             const isOutbound =
               newMsg.sender_type === "agent" || newMsg.sender_type === "bot";
-            const cleaned = isOutbound
-              ? prev.filter(
-                  (m) => !(m.id.startsWith("temp-") && m.status !== "failed"),
-                )
-              : prev;
+            let cleaned = prev;
+            if (isOutbound) {
+              const idx = prev.findIndex(
+                (m) => m.id.startsWith("temp-") && m.status !== "failed",
+              );
+              if (idx !== -1) {
+                cleaned = [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+              }
+            }
             // Keep the thread ordered by time — realtime can deliver out of
             // order, and an optimistic temp's client clock may differ from the
             // server's, which would otherwise render bubbles (and date
@@ -418,7 +422,15 @@ export default function InboxPage() {
 
   const handleConversationsLoaded = useCallback(
     (loaded: Conversation[]) => {
-      setConversations(loaded);
+      // Merge, don't blindly replace: the OPEN conversation is read, so keep
+      // its unread at 0 even if the server row hasn't been zeroed yet — a raw
+      // replace would flash the badge the user just cleared back to N.
+      const activeId = activeConversation?.id;
+      setConversations(
+        activeId
+          ? loaded.map((c) => (c.id === activeId ? { ...c, unread_count: 0 } : c))
+          : loaded,
+      );
       // Resolve a pending deep-link here rather than in an effect — this
       // is an event handler, so the setState calls below are allowed by
       // react-hooks/set-state-in-effect. Runs once per ?c=<id> URL value
