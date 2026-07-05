@@ -16,7 +16,11 @@
 import { NextResponse, after } from "next/server";
 import crypto from "node:crypto";
 
-import { ingestInboundMessage, inboundMediaMarker } from "@/lib/whatsapp/ingest-inbound";
+import {
+  ingestInboundMessage,
+  ingestOutboundMirror,
+  inboundMediaMarker,
+} from "@/lib/whatsapp/ingest-inbound";
 import { enrichContactFromWaha } from "@/lib/waha/profile";
 import { enrichGroupFromWaha } from "@/lib/waha/group";
 import { chatIdToPhone, wahaBaseUrl, wahaWebhookHmacKey } from "@/lib/waha/config";
@@ -66,8 +70,10 @@ interface MessagePayload {
     Info?: {
       SenderAlt?: string;
       ChatAlt?: string;
+      RecipientAlt?: string;
       Sender?: string;
       Chat?: string;
+      ID?: string;
     };
   };
 }
@@ -224,9 +230,9 @@ export async function POST(request: Request) {
   // caption, when present, is used as-is.
   const effectiveText = text || inboundMediaMarker(p.type, p.hasMedia) || "";
 
-  // Ignore our own echoes, status/channel broadcasts, and truly-empty/
-  // no-sender events. Group chats (@g.us) ARE ingested — see below.
-  if (p.fromMe || !from || isNonChat || !effectiveText) {
+  // Ignore status/channel broadcasts and truly-empty/no-sender events. Group
+  // chats (@g.us) AND our own sent messages (fromMe) ARE ingested — see below.
+  if (!from || isNonChat || !effectiveText) {
     return NextResponse.json({ received: true, ignored: "not-an-inbound-message" });
   }
 
@@ -239,6 +245,47 @@ export async function POST(request: Request) {
     const messageId = p.id || `waha-${Date.now()}`;
     const timestampSec =
       typeof p.timestamp === "number" ? p.timestamp : Math.floor(Date.now() / 1000);
+
+    // Sent from the phone directly → mirror into the thread as OUTBOUND, so the
+    // inbox matches the phone. Deduped against the app's own sent echoes.
+    if (p.fromMe) {
+      const status =
+        wahaAckToStatus(typeof p.ack === "number" ? p.ack : null, p.ackName) ??
+        "sent";
+      const messageKey =
+        p._data?.Info?.ID ??
+        (typeof p.id === "string" ? p.id.split("_").pop() : undefined);
+
+      let phone = from;
+      if (!isGroup && from.endsWith("@lid")) {
+        // For an outbound to a LID chat the real number is in RecipientAlt.
+        const alt = p._data?.Info?.RecipientAlt ?? "";
+        if (alt.endsWith("@c.us") || alt.endsWith("@s.whatsapp.net")) {
+          phone = alt;
+        } else {
+          return NextResponse.json({
+            received: true,
+            ignored: "unresolved-lid-outbound",
+          });
+        }
+      }
+
+      await ingestOutboundMirror(
+        {
+          accountId: cfg.account_id,
+          ownerUserId: cfg.user_id,
+          configId: cfg.id,
+          phone: isGroup ? from : chatIdToPhone(phone),
+          name: "",
+          text: effectiveText,
+          messageId,
+          timestampSec,
+          isGroup,
+        },
+        { status, messageKey },
+      );
+      return NextResponse.json({ received: true, mirrored: true });
+    }
 
     if (isGroup) {
       // `from` is the group JID; the real sender is a participant.

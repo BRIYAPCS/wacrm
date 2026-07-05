@@ -8,6 +8,8 @@
 // Uses the service role.
 // ============================================================
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
 
@@ -65,16 +67,18 @@ export interface InboundMessage {
   senderName?: string;
 }
 
-/** Returns { conversationId, contactId, contactCreated } on success, or null. */
-export async function ingestInboundMessage(
-  msg: InboundMessage,
-): Promise<{
+type ThreadRef = {
   conversationId: string;
   contactId: string;
   contactCreated: boolean;
-} | null> {
-  const admin = supabaseAdmin();
+};
 
+/** Find or create the contact + conversation for a message. Shared by inbound
+ *  ingest and the outbound (from-phone) mirror. */
+async function resolveThread(
+  admin: SupabaseClient,
+  msg: InboundMessage,
+): Promise<ThreadRef | null> {
   // --- contact ---
   let contactId: string;
   let contactCreated = false;
@@ -208,6 +212,18 @@ export async function ingestInboundMessage(
     }
   }
 
+  return { conversationId, contactId, contactCreated };
+}
+
+/** Returns { conversationId, contactId, contactCreated } on success, or null. */
+export async function ingestInboundMessage(
+  msg: InboundMessage,
+): Promise<ThreadRef | null> {
+  const admin = supabaseAdmin();
+  const thread = await resolveThread(admin, msg);
+  if (!thread) return null;
+  const { conversationId, contactId, contactCreated } = thread;
+
   // --- message ---
   const { error: msgErr } = await admin.from("messages").insert({
     conversation_id: conversationId,
@@ -241,4 +257,61 @@ export async function ingestInboundMessage(
   });
 
   return { conversationId, contactId, contactCreated };
+}
+
+function escapeLike(s: string): string {
+  return s.replace(/([\\%_])/g, "\\$1");
+}
+
+/**
+ * Mirror an OUTBOUND message the user sent from the phone directly (webhook
+ * `fromMe: true`) into the thread as an agent message. Deduped by the trailing
+ * WhatsApp key so the app's OWN sent echoes (stored with a different id form)
+ * aren't inserted twice. Does not touch `unread_count`.
+ */
+export async function ingestOutboundMirror(
+  msg: InboundMessage,
+  opts: { status?: string; messageKey?: string } = {},
+): Promise<{ conversationId: string } | null> {
+  const admin = supabaseAdmin();
+  const thread = await resolveThread(admin, msg);
+  if (!thread) return null;
+  const { conversationId } = thread;
+
+  const key =
+    opts.messageKey || msg.messageId.split("_").pop() || msg.messageId;
+  const { data: existing } = await admin
+    .from("messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .like("message_id", `%${escapeLike(key)}`)
+    .limit(1);
+  if (existing && existing.length > 0) {
+    return { conversationId }; // already present (app-sent echo / re-delivery)
+  }
+
+  const { error } = await admin.from("messages").insert({
+    conversation_id: conversationId,
+    sender_type: "agent",
+    content_type: "text",
+    content_text: msg.text,
+    message_id: msg.messageId,
+    status: opts.status ?? "sent",
+    created_at: new Date(msg.timestampSec * 1000).toISOString(),
+  });
+  if (error && !isUniqueViolation(error)) {
+    console.error("[outbound-mirror] insert failed:", error);
+    return null;
+  }
+
+  await admin
+    .from("conversations")
+    .update({
+      last_message_text: msg.text || "[message]",
+      last_message_at: new Date(msg.timestampSec * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", conversationId);
+
+  return { conversationId };
 }
