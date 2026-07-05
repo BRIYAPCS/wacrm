@@ -73,6 +73,12 @@ export interface BroadcastPlan {
   planned: PlannedRecipient[];
   /** Phones rejected up front (invalid E.164) — counted as failed. */
   rejected: number;
+  /**
+   * Recipients collapsed into an already-listed contact (duplicate phone, or
+   * two numbers that fuzzy-matched to one contact). Reported so the caller's
+   * accounting balances — otherwise these vanish from both accepted+rejected.
+   */
+  merged: number;
 }
 
 const MAX_RECIPIENTS = 1000;
@@ -262,6 +268,7 @@ export async function createBroadcast(
     templateRow,
     planned,
     rejected,
+    merged: resolved.length - deduped.length,
   };
 }
 

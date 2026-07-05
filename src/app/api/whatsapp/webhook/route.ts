@@ -404,6 +404,10 @@ async function handleStatusUpdate(status: {
     const { error: msgErr } = await supabaseAdmin()
       .from('messages')
       .update({ status: status.status })
+      // Delivery ticks apply only to OUTBOUND messages; scope to agent rows so
+      // an ack can't flip an inbound customer row (id collisions across
+      // numbers) to a status that's only meaningful for outbound.
+      .eq('sender_type', 'agent')
       .eq('message_id', status.id)
       .in('status', preds);
 

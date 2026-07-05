@@ -176,13 +176,12 @@ export function ContactForm({
         contactId = data.id;
       }
 
-      // Sync tags
+      // Sync tags — loss-safe. Add the selected rows first (idempotent upsert
+      // against the UNIQUE(contact_id, tag_id) index), THEN remove only the
+      // deselected ones. A mid-failure leaves extra tags at worst; it can never
+      // wipe every tag the way a blind delete-then-insert does when the insert
+      // fails after the delete has already committed.
       if (contactId) {
-        await supabase
-          .from('contact_tags')
-          .delete()
-          .eq('contact_id', contactId);
-
         if (selectedTagIds.length > 0) {
           const tagRows = selectedTagIds.map((tag_id) => ({
             contact_id: contactId!,
@@ -190,9 +189,26 @@ export function ContactForm({
           }));
           const { error: tagError } = await supabase
             .from('contact_tags')
-            .insert(tagRows);
+            .upsert(tagRows, {
+              onConflict: 'contact_id,tag_id',
+              ignoreDuplicates: true,
+            });
           if (tagError) throw tagError;
         }
+
+        let pruneTags = supabase
+          .from('contact_tags')
+          .delete()
+          .eq('contact_id', contactId);
+        if (selectedTagIds.length > 0) {
+          pruneTags = pruneTags.not(
+            'tag_id',
+            'in',
+            `(${selectedTagIds.join(',')})`,
+          );
+        }
+        const { error: pruneError } = await pruneTags;
+        if (pruneError) throw pruneError;
       }
 
       toast.success(isEdit ? 'Contact updated' : 'Contact created');

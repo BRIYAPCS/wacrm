@@ -17,6 +17,7 @@ import {
   RATE_LIMITS,
 } from '@/lib/rate-limit'
 import { canSendMessages, type AccountRole } from '@/lib/auth/roles'
+import { resolveAccountEntitlements } from '@/lib/plans/resolve-account'
 
 /** Hard cap on recipients per single broadcast call (matches the v1 core). */
 const MAX_RECIPIENTS = 1000
@@ -106,6 +107,17 @@ export async function POST(request: Request) {
     if (!profile?.account_role || !canSendMessages(profile.account_role as AccountRole)) {
       return NextResponse.json(
         { error: 'Your role does not permit sending broadcasts.' },
+        { status: 403 },
+      )
+    }
+
+    // Plan gate. Broadcasts ship on every base tier, but a plan_overrides can
+    // switch the feature off — the UI then hides it, so the API must refuse it
+    // too (else it's sendable straight past the disabled entitlement).
+    const entitlements = await resolveAccountEntitlements(supabase, accountId)
+    if (!entitlements.features.has('broadcasts')) {
+      return NextResponse.json(
+        { error: "Broadcasts aren't included in your plan.", code: 'plan_upgrade_required' },
         { status: 403 },
       )
     }

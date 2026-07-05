@@ -338,12 +338,10 @@ export function ContactDetailView({
     setSavingCustom(true);
 
     try {
-      // Delete existing values and re-insert
-      await supabase
-        .from('contact_custom_values')
-        .delete()
-        .eq('contact_id', contactId);
-
+      // Loss-safe save: upsert the filled values first (against the
+      // UNIQUE(contact_id, custom_field_id) index), then prune only the
+      // fields that were cleared. Avoids the delete-then-insert window where
+      // an insert failure after the delete would wipe every custom value.
       const rows = Object.entries(customValues)
         .filter(([, val]) => val.trim())
         .map(([fieldId, val]) => ({
@@ -355,9 +353,20 @@ export function ContactDetailView({
       if (rows.length > 0) {
         const { error } = await supabase
           .from('contact_custom_values')
-          .insert(rows);
+          .upsert(rows, { onConflict: 'contact_id,custom_field_id' });
         if (error) throw error;
       }
+
+      const keepIds = rows.map((r) => r.custom_field_id);
+      let prune = supabase
+        .from('contact_custom_values')
+        .delete()
+        .eq('contact_id', contactId);
+      if (keepIds.length > 0) {
+        prune = prune.not('custom_field_id', 'in', `(${keepIds.join(',')})`);
+      }
+      const { error: pruneErr } = await prune;
+      if (pruneErr) throw pruneErr;
 
       toast.success('Custom fields saved');
     } catch {
