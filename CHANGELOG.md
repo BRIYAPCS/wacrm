@@ -9,6 +9,19 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.47.1] — 2026-07-05
+
+### Added
+
+- **Automatic history import on connect.** The first time a WAHA number reaches
+  connected (QR scanned), its existing chats + history import automatically in
+  the background — no button press needed. A reconnect won't re-import (guarded
+  by a one-time flag); the manual **Sync chats** button still re-runs on demand.
+
+  **Migration required:** apply `supabase/migrations/061_waha_history_synced.sql`
+  (adds `whatsapp_config.history_synced_at`). Already-connected numbers won't
+  auto-fire — use the Sync chats button once for those.
+
 ## [0.47.0] — 2026-07-05
 
 ### Added
