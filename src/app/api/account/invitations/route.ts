@@ -273,10 +273,35 @@ export async function POST(request: Request) {
       );
     }
 
-    // Send the Supabase native invite email. The account + role travel in
-    // user_metadata; handle_new_user (migration 044) reads them to attach
-    // the new user to this account with this role. The email links to
-    // /accept-invite where they set a password.
+    // Record the pending invitation FIRST. handle_new_user (migration 057)
+    // attaches the new user by matching this row (email + account) — it's the
+    // trust anchor, not the forgeable user_metadata — so it MUST exist before
+    // inviteUserByEmail creates the user and fires the trigger. token_hash is
+    // null; email invites use Supabase's own link, not our token.
+    const { data: row, error: insertErr } = await ctx.supabase
+      .from("account_invitations")
+      .insert({
+        account_id: ctx.accountId,
+        email,
+        role,
+        created_by_user_id: ctx.userId,
+        label: name,
+        expires_at: expiresAt.toISOString(),
+      })
+      .select("id, email, role, label, expires_at, created_at")
+      .single();
+
+    if (insertErr || !row) {
+      console.error("[POST /api/account/invitations] insert error:", insertErr);
+      return NextResponse.json(
+        { error: "Failed to record the invitation" },
+        { status: 500 },
+      );
+    }
+
+    // Send the Supabase native invite email — this creates the auth user, and
+    // handle_new_user attaches them to this account with the invitation's role.
+    // The email links to /accept-invite where they set a password.
     const admin = supabaseAdmin();
     const { data: invited, error: inviteErr } =
       await admin.auth.admin.inviteUserByEmail(email, {
@@ -291,10 +316,11 @@ export async function POST(request: Request) {
 
     if (inviteErr || !invited?.user) {
       const msg = inviteErr?.message ?? "Failed to send invitation";
-      // The most common cause: the email already has an auth account on
-      // this instance (signed up or invited before).
+      // The most common cause: the email already has an auth account on this
+      // instance. Roll back the pending row so a re-invite isn't blocked.
       const alreadyExists = /already|registered|exists/i.test(msg);
       console.error("[POST /api/account/invitations] inviteUserByEmail:", msg);
+      await ctx.supabase.from("account_invitations").delete().eq("id", row.id);
       return NextResponse.json(
         {
           error: alreadyExists
@@ -305,32 +331,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // Record the pending invite (for the Members list + revoke). token_hash
-    // is null — email invites use Supabase's own link, not our token.
-    const { data: row, error: insertErr } = await ctx.supabase
+    // Link the created user id back onto the invitation row (best-effort).
+    await ctx.supabase
       .from("account_invitations")
-      .insert({
-        account_id: ctx.accountId,
-        email,
-        invited_user_id: invited.user.id,
-        role,
-        created_by_user_id: ctx.userId,
-        label: name,
-        expires_at: expiresAt.toISOString(),
-      })
-      .select("id, email, role, label, expires_at, created_at")
-      .single();
-
-    if (insertErr || !row) {
-      // The email went out but we couldn't record it — roll back the
-      // pending auth user so a re-invite isn't blocked by "already exists".
-      console.error("[POST /api/account/invitations] insert error:", insertErr);
-      await admin.auth.admin.deleteUser(invited.user.id).catch(() => {});
-      return NextResponse.json(
-        { error: "Failed to record the invitation" },
-        { status: 500 },
-      );
-    }
+      .update({ invited_user_id: invited.user.id })
+      .eq("id", row.id);
 
     recordAudit({
       accountId: ctx.accountId,

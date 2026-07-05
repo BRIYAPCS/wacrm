@@ -9,6 +9,21 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.40.2] — 2026-07-05
+
+### Fixed
+
+- **Team invitations work again** (they were failing with "Couldn't send the
+  invitation"). The invite-security gate from 0.25.x checked `invited_at` at
+  insert time, but current GoTrue sets `invited_at` in a follow-up UPDATE — so
+  the `AFTER INSERT` trigger saw NULL and rejected every real invite as
+  "invite-only." The gate now anchors on the server-created `account_invitations`
+  row (email + account, RLS-protected) instead: the invited role is taken from
+  that row (not the forgeable metadata), and a signup with a forged
+  `invited_account_id` and no matching invitation is still rejected. The invite
+  route now writes the invitation row *before* calling invite. **Migration
+  required:** apply `supabase/migrations/057_invite_gate_by_invitation_row.sql`.
+
 ## [0.40.1] — 2026-07-05
 
 ### Fixed
