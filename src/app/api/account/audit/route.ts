@@ -9,7 +9,7 @@
 
 import { NextResponse } from "next/server";
 
-import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { requireRole, requireFeature, toErrorResponse } from "@/lib/auth/account";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -17,6 +17,7 @@ const MAX_LIMIT = 100;
 export async function GET(request: Request) {
   try {
     const ctx = await requireRole("admin");
+    requireFeature(ctx, "audit_log", "The audit log");
 
     const url = new URL(request.url);
     const limitRaw = Number(url.searchParams.get("limit"));

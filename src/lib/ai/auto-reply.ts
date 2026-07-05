@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './admin-client'
+import { resolveAccountEntitlements } from '@/lib/plans/resolve-account'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
@@ -43,6 +44,12 @@ export async function dispatchInboundToAiReply(
 
   try {
     const db = supabaseAdmin()
+
+    // Plan gate at RUNTIME (not just the setup UI): if the account's plan no
+    // longer includes AI (e.g. after a downgrade), stop auto-replying even
+    // though the ai_configs row may still say is_active.
+    const entitlements = await resolveAccountEntitlements(db, accountId)
+    if (!entitlements.features.has('ai')) return
 
     const config = await loadAiConfig(db, accountId)
     if (!config || !config.autoReplyEnabled) return

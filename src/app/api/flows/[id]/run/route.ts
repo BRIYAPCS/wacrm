@@ -13,7 +13,7 @@
 
 import { NextResponse } from "next/server";
 
-import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { requireRole, requireFeature, toErrorResponse } from "@/lib/auth/account";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -41,6 +41,7 @@ export async function POST(
 ) {
   try {
     const ctx = await requireRole("agent");
+    requireFeature(ctx, "flows", "Flows");
 
     // Starting a flow fires outbound WhatsApp messages, so meter it
     // like an individual send (60/min per agent).

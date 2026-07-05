@@ -87,7 +87,9 @@ export async function createBroadcast(
   db: SupabaseClient,
   accountId: string,
   auditUserId: string,
-  params: CreateBroadcastParams
+  params: CreateBroadcastParams,
+  /** The account's `broadcast_recipients` plan limit (-1 = unlimited). */
+  recipientLimit = MAX_RECIPIENTS
 ): Promise<BroadcastPlan> {
   const { name, templateName, recipients } = params;
   const templateLanguage = params.templateLanguage || 'en_US';
@@ -102,11 +104,21 @@ export async function createBroadcast(
       400
     );
   }
+  // Absolute per-request ceiling (a single synchronous fan-out can't exceed
+  // this regardless of tier — very large sends must be split / queued).
   if (recipients.length > MAX_RECIPIENTS) {
     throw new BroadcastError(
       'bad_request',
       `A broadcast is capped at ${MAX_RECIPIENTS} recipients per request; split larger sends`,
       400
+    );
+  }
+  // Then the account's plan cap (`broadcast_recipients`; -1 = unlimited).
+  if (recipientLimit >= 0 && recipients.length > recipientLimit) {
+    throw new BroadcastError(
+      'plan_limit',
+      `This broadcast has ${recipients.length} recipients but your plan allows ${recipientLimit} per broadcast.`,
+      403
     );
   }
 
@@ -118,6 +130,15 @@ export async function createBroadcast(
     throw new BroadcastError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
+      400
+    );
+  }
+  // Template broadcasts go via the Meta Graph API — a non-Meta default number
+  // carries a different secret (never send it to Meta). Reject clearly.
+  if (config.provider !== 'meta') {
+    throw new BroadcastError(
+      'provider_unsupported',
+      'Broadcasts require a Meta (Cloud API) number. Set a Meta number as your default.',
       400
     );
   }

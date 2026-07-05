@@ -8,7 +8,12 @@
 
 import { NextResponse } from 'next/server'
 
-import { requireRole, requireFeature, toErrorResponse } from '@/lib/auth/account'
+import {
+  requireRole,
+  requireFeature,
+  requireWithinLimit,
+  toErrorResponse,
+} from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { extractFromUrl, ExtractError } from '@/lib/ai/extract'
 import { createAndIngestDocument } from '@/lib/ai/knowledge'
@@ -23,6 +28,13 @@ export async function POST(request: Request) {
     const { supabase, accountId, userId } = ctx
     const limit = checkRateLimit(`ai-kb-url:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
+
+    // Enforce the plan's knowledge-base document cap on create.
+    const { count: docCount } = await supabase
+      .from('ai_knowledge_documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+    requireWithinLimit(ctx, 'kb_documents', docCount ?? 0, 'knowledge base documents')
 
     const body = (await request.json().catch(() => null)) as
       | { url?: unknown; title?: unknown }

@@ -6,13 +6,14 @@
 
 import { NextResponse } from "next/server";
 
-import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { getCurrentAccount, requireFeature, toErrorResponse } from "@/lib/auth/account";
 
 const ALLOWED_DAYS = new Set([7, 30, 90]);
 
 export async function GET(request: Request) {
   try {
     const ctx = await getCurrentAccount();
+    requireFeature(ctx, "reports", "Reports");
     const daysParam = Number(new URL(request.url).searchParams.get("days"));
     const days = ALLOWED_DAYS.has(daysParam) ? daysParam : 30;
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);

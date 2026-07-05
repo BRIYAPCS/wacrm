@@ -17,6 +17,7 @@ import type {
 import { supabaseAdmin } from './admin-client'
 import { engineSendText, engineSendTemplate } from './meta-send'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { resolveAccountEntitlements } from '@/lib/plans/resolve-account'
 
 // ------------------------------------------------------------
 // Public API
@@ -58,6 +59,12 @@ export interface DispatchInput {
 export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
   try {
     const db = supabaseAdmin()
+
+    // Plan gate at RUNTIME: don't fire automations for an account whose plan
+    // doesn't include them (covers a downgrade with pre-existing active rows).
+    if (!(await resolveAccountEntitlements(db, input.accountId)).features.has('automations')) {
+      return
+    }
 
     // Tenant isolation. `contactId` can be caller-supplied (the manual
     // POST /api/automations/engine entrypoint reads it straight from the
