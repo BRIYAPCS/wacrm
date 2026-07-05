@@ -11,6 +11,41 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
 
+/**
+ * A human-readable marker for a non-text inbound message, so a media message
+ * (image/voice/document/…) is surfaced in the thread instead of being dropped.
+ * Returns null for a plain text message (use its body) or an unknown type with
+ * no media. Full media download/preview is a follow-up; this guarantees the
+ * agent at least SEES that the customer sent something.
+ */
+export function inboundMediaMarker(
+  type: string | null | undefined,
+  hasMedia?: boolean,
+): string | null {
+  switch ((type ?? "").toLowerCase()) {
+    case "image":
+      return "📷 Photo";
+    case "video":
+      return "🎥 Video";
+    case "audio":
+    case "ptt":
+    case "voice":
+      return "🎤 Voice message";
+    case "document":
+      return "📄 Document";
+    case "sticker":
+      return "🃏 Sticker";
+    case "location":
+      return "📍 Location";
+    case "contact":
+    case "vcard":
+    case "contacts":
+      return "👤 Contact card";
+    default:
+      return hasMedia ? "📎 Attachment" : null;
+  }
+}
+
 export interface InboundMessage {
   accountId: string;
   ownerUserId: string;

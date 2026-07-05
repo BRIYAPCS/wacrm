@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { resolveAccountEntitlements } from '@/lib/plans/resolve-account'
 
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
@@ -47,6 +48,34 @@ async function requireOwnership(
   return { ok: true, userId: user.id, supabase }
 }
 
+// Resolve the caller's account and confirm their plan includes Flows.
+// Returns a 403 response to short-circuit the handler, or null to proceed.
+async function requireFlowsEntitlement(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<NextResponse | null> {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('account_id')
+    .eq('user_id', userId)
+    .single()
+  const accountId = profile?.account_id as string | undefined
+  if (!accountId) {
+    return NextResponse.json(
+      { error: 'Your profile is not linked to an account.' },
+      { status: 403 },
+    )
+  }
+  const entitlements = await resolveAccountEntitlements(supabase, accountId)
+  if (!entitlements.features.has('flows')) {
+    return NextResponse.json(
+      { error: "Flows isn't included in your plan.", code: 'plan_upgrade_required' },
+      { status: 403 },
+    )
+  }
+  return null
+}
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> },
@@ -54,7 +83,10 @@ export async function GET(
   const { id } = await context.params
   const guard = await requireOwnership(id)
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
-  const { supabase } = guard
+  const { userId, supabase } = guard
+
+  const gate = await requireFlowsEntitlement(supabase, userId)
+  if (gate) return gate
 
   const [{ data: flow }, { data: nodes }] = await Promise.all([
     supabase.from('flows').select('*').eq('id', id).maybeSingle(),
@@ -93,6 +125,9 @@ export async function PUT(
   const { id } = await context.params
   const guard = await requireOwnership(id)
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
+
+  const gate = await requireFlowsEntitlement(guard.supabase, guard.userId)
+  if (gate) return gate
 
   const body = (await request.json().catch(() => null)) as PutBody | null
   if (!body) {
@@ -179,6 +214,9 @@ export async function DELETE(
   const { id } = await context.params
   const guard = await requireOwnership(id)
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
+
+  const gate = await requireFlowsEntitlement(guard.supabase, guard.userId)
+  if (gate) return gate
 
   // CASCADE on flow_nodes / flow_runs / flow_run_events handles the
   // children. Active runs end abruptly — there's no graceful "drain"
