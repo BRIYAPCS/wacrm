@@ -17,6 +17,7 @@ import type {
   MessageReaction,
   Contact,
   ConversationStatus,
+  ConversationEvent,
   MessageTemplate,
   Profile,
 } from "@/types";
@@ -151,20 +152,24 @@ function formatDateSeparator(dateStr: string): string {
   return format(date, "MMMM d, yyyy");
 }
 
-function groupMessagesByDate(messages: Message[]) {
-  const groups: { date: string; messages: Message[] }[] = [];
-  let currentDate = "";
+// A unified thread timeline: messages and action-history events interleaved
+// by time, so a "transferred to X" line sits exactly where it happened.
+type TimelineEntry =
+  | { kind: "message"; at: string; msg: Message }
+  | { kind: "event"; at: string; event: ConversationEvent };
 
-  for (const msg of messages) {
-    const day = format(new Date(msg.created_at), "yyyy-MM-dd");
+function groupTimelineByDate(entries: TimelineEntry[]) {
+  const groups: { date: string; entries: TimelineEntry[] }[] = [];
+  let currentDate = "";
+  for (const e of entries) {
+    const day = format(new Date(e.at), "yyyy-MM-dd");
     if (day !== currentDate) {
       currentDate = day;
-      groups.push({ date: msg.created_at, messages: [msg] });
+      groups.push({ date: e.at, entries: [e] });
     } else {
-      groups[groups.length - 1].messages.push(msg);
+      groups[groups.length - 1].entries.push(e);
     }
   }
-
   return groups;
 }
 
@@ -604,6 +609,54 @@ export function MessageThread({
     [conversation, onNewMessage, onUpdateMessage],
   );
 
+  // --- Action-history events (assign / transfer / status change) ---
+  const [events, setEvents] = useState<ConversationEvent[]>([]);
+  useEffect(() => {
+    const convId = conversation?.id;
+    if (!convId) {
+      setEvents([]);
+      return;
+    }
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from("conversation_events")
+      .select("*")
+      .eq("conversation_id", convId)
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        if (!cancelled) setEvents((data as ConversationEvent[]) ?? []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation?.id]);
+
+  const logEvent = useCallback(
+    async (
+      eventType: ConversationEvent["event_type"],
+      meta: ConversationEvent["meta"],
+    ) => {
+      if (!conversation || !account?.id) return;
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("conversation_events")
+        .insert({
+          conversation_id: conversation.id,
+          account_id: account.id,
+          event_type: eventType,
+          actor_id: user?.id ?? null,
+          meta: meta ?? {},
+        })
+        .select("*")
+        .single();
+      if (!error && data) {
+        setEvents((prev) => [...prev, data as ConversationEvent]);
+      }
+    },
+    [conversation, account?.id, user?.id],
+  );
+
   const handleStatusChange = useCallback(
     async (status: ConversationStatus) => {
       if (!conversation) return;
@@ -621,8 +674,9 @@ export function MessageThread({
       }
 
       onStatusChange(conversation.id, status);
+      void logEvent("status_changed", { to_status: status });
     },
-    [conversation, onStatusChange]
+    [conversation, onStatusChange, logEvent]
   );
 
   // Per-conversation chat background (owner/admin only). Persisted via a
@@ -848,6 +902,7 @@ export function MessageThread({
     async (agentId: string | null) => {
       if (!conversation) return;
 
+      const prevAgent = conversation.assigned_agent_id ?? null;
       const supabase = createClient();
       const { error } = await supabase
         .from("conversations")
@@ -861,8 +916,16 @@ export function MessageThread({
       }
 
       onAssignChange(conversation.id, agentId);
+      if (agentId) {
+        void logEvent("assigned", {
+          to_agent_id: agentId,
+          from_agent_id: prevAgent,
+        });
+      } else {
+        void logEvent("unassigned", { from_agent_id: prevAgent });
+      }
     },
-    [conversation, onAssignChange],
+    [conversation, onAssignChange, logEvent],
   );
 
   // Effective chat background: the conversation's own override, else the
@@ -900,12 +963,21 @@ export function MessageThread({
   const displayName = isGroup
     ? contact.name || "Group chat"
     : contact.name || contact.phone;
-  const messageGroups = groupMessagesByDate(messages);
+  // Merge messages + action-history events into one time-ordered timeline.
+  const timeline: TimelineEntry[] = [
+    ...messages.map(
+      (m): TimelineEntry => ({ kind: "message", at: m.created_at, msg: m }),
+    ),
+    ...events.map(
+      (e): TimelineEntry => ({ kind: "event", at: e.created_at, event: e }),
+    ),
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  const timelineGroups = groupTimelineByDate(timeline);
 
   // Teams-style run headers: the sender's name shows above the FIRST message of
   // each consecutive run from the same sender (a new run also starts after a
-  // >5-min gap). This is what makes multi-agent threads legible — you can see
-  // which agent sent which reply.
+  // >5-min gap, or after an action-history event). This is what makes
+  // multi-agent threads legible — you can see which agent sent which reply.
   const RUN_GAP_MS = 5 * 60 * 1000;
   const senderNameFor = (m: Message): string => {
     if (m.sender_type === "bot") return "AI assistant";
@@ -929,6 +1001,47 @@ export function MessageThread({
     const gap =
       new Date(m.created_at).getTime() - new Date(prev.created_at).getTime();
     return gap > RUN_GAP_MS;
+  };
+
+  // Precompute which messages start a run (an event resets the run).
+  const startsRunById = new Map<string, boolean>();
+  {
+    let prev: Message | null = null;
+    for (const e of timeline) {
+      if (e.kind === "event") {
+        prev = null;
+        continue;
+      }
+      startsRunById.set(e.msg.id, startsRun(e.msg, prev));
+      prev = e.msg;
+    }
+  }
+
+  // Human-readable action-history line ("Ana transferred this to Beto").
+  const nameForUser = (uid?: string | null): string => {
+    if (!uid) return "Someone";
+    if (uid === user?.id) return "You";
+    return profiles.find((p) => p.user_id === uid)?.full_name ?? "A teammate";
+  };
+  const describeEvent = (ev: ConversationEvent): string => {
+    const actor = nameForUser(ev.actor_id);
+    if (ev.event_type === "status_changed") {
+      const label =
+        STATUS_OPTIONS.find((s) => s.value === ev.meta?.to_status)?.label ??
+        ev.meta?.to_status ??
+        "updated";
+      return `${actor} marked this ${label.toLowerCase()}`;
+    }
+    if (ev.event_type === "unassigned") {
+      const from = ev.meta?.from_agent_id
+        ? ` from ${nameForUser(ev.meta.from_agent_id)}`
+        : "";
+      return `${actor} unassigned this${from}`;
+    }
+    const to = nameForUser(ev.meta?.to_agent_id);
+    return ev.meta?.from_agent_id
+      ? `${actor} transferred this from ${nameForUser(ev.meta.from_agent_id)} to ${to}`
+      : `${actor} assigned this to ${to}`;
   };
 
   const currentStatus = STATUS_OPTIONS.find(
@@ -1224,7 +1337,7 @@ export function MessageThread({
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
-        ) : messages.length === 0 ? (
+        ) : timeline.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
             <p className="text-sm text-muted-foreground">No messages yet</p>
             <p className="text-xs text-muted-foreground">
@@ -1233,7 +1346,7 @@ export function MessageThread({
           </div>
         ) : (
           <div className="space-y-4">
-            {messageGroups.map((group) => (
+            {timelineGroups.map((group) => (
               <div key={group.date}>
                 {/* Date separator */}
                 <div className="mb-4 flex items-center justify-center">
@@ -1241,11 +1354,26 @@ export function MessageThread({
                     {formatDateSeparator(group.date)}
                   </span>
                 </div>
-                {/* Messages */}
+                {/* Timeline: messages + action-history events */}
                 <div className="space-y-2">
-                  {group.messages.map((msg, idx) => {
-                    const prevMsg = idx > 0 ? group.messages[idx - 1] : null;
-                    const showSender = startsRun(msg, prevMsg);
+                  {group.entries.map((entry) => {
+                    if (entry.kind === "event") {
+                      const ev = entry.event;
+                      return (
+                        <div
+                          key={ev.id}
+                          className="my-2 flex items-center justify-center"
+                        >
+                          <span className="rounded-full bg-muted/60 px-3 py-1 text-center text-[10px] text-muted-foreground">
+                            {describeEvent(ev)} ·{" "}
+                            {format(new Date(ev.created_at), "h:mm a")}
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    const msg = entry.msg;
+                    const showSender = startsRunById.get(msg.id) ?? true;
                     const isAgentMsg =
                       msg.sender_type === "agent" || msg.sender_type === "bot";
                     const parent = msg.reply_to_message_id
