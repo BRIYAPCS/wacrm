@@ -72,8 +72,10 @@ export async function proxy(request: NextRequest) {
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
-  // Protected pages - redirect to login if not authenticated
-  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings']
+  // Protected pages - redirect to login if not authenticated.
+  // Must list every section under the (dashboard) route group; a missing entry
+  // lets an unauthenticated request fall through and get served the SSR shell.
+  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings', '/agents', '/flows', '/notifications', '/reports']
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'

@@ -26,7 +26,12 @@ export const runtime = "nodejs";
 
 function verifySignature(raw: string, header: string | null): boolean {
   const secret = wahaWebhookHmacKey();
-  if (!secret) return true; // no key configured → skip (test convenience)
+  if (!secret) {
+    // Fail CLOSED in production: an unset key must not silently turn this
+    // data-mutating endpoint into an open, unauthenticated ingress. Skipping
+    // the check remains a convenience only off-production (local/tests).
+    return process.env.NODE_ENV !== "production";
+  }
   if (!header) return false;
   const expected = crypto.createHmac("sha512", secret).update(raw).digest("hex");
   const a = Buffer.from(header.trim(), "hex");
@@ -171,10 +176,17 @@ export async function POST(request: Request) {
     );
     const preds = status ? MESSAGE_STATUS_PREDECESSORS[status] : undefined;
     if (rawKey && status && preds) {
+      // Escape LIKE metacharacters so a '%' or '_' in the key can't act as a
+      // wildcard and match unrelated rows.
+      const safeKey = rawKey.replace(/([\\%_])/g, "\\$1");
       await admin
         .from("messages")
         .update({ status })
-        .like("message_id", `%${rawKey}`)
+        // Delivery ticks only apply to OUTBOUND messages. Scope to agent rows
+        // so an ack (e.g. a read receipt sent for an inbound message) can't
+        // flip a customer's row 'delivered'→'read' — mutating the wrong record.
+        .eq("sender_type", "agent")
+        .like("message_id", `%${safeKey}`)
         .in("status", preds);
     }
     return NextResponse.json({ received: true });

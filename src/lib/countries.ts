@@ -86,22 +86,29 @@ export const DEFAULT_COUNTRY_ISO2 = "US";
  * matches (e.g. an empty or partial value).
  */
 export function splitE164(value: string): { country: Country; national: string } {
-  const digits = (value ?? "").replace(/[^\d]/g, "");
+  const raw = (value ?? "").trim();
+  const digits = raw.replace(/[^\d]/g, "");
   const fallback =
     COUNTRIES.find((c) => c.iso2 === DEFAULT_COUNTRY_ISO2) ?? COUNTRIES[0];
   if (!digits) return { country: fallback, national: "" };
 
-  let best: Country | null = null;
-  for (const c of COUNTRIES) {
-    if (
-      digits.startsWith(c.dialCode) &&
-      (!best || c.dialCode.length > best.dialCode.length)
-    ) {
-      best = c;
+  // Only treat leading digits as a country code when the value is real E.164
+  // (starts with "+"). A stored national-only number like "2025551234" must
+  // NOT be prefix-matched — "20…" would wrongly resolve to Egypt — so it stays
+  // under the default country and becomes correct E.164 (+1…) on save.
+  if (raw.startsWith("+")) {
+    let best: Country | null = null;
+    for (const c of COUNTRIES) {
+      if (
+        digits.startsWith(c.dialCode) &&
+        (!best || c.dialCode.length > best.dialCode.length)
+      ) {
+        best = c;
+      }
     }
-  }
-  if (best) {
-    return { country: best, national: digits.slice(best.dialCode.length) };
+    if (best) {
+      return { country: best, national: digits.slice(best.dialCode.length) };
+    }
   }
   return { country: fallback, national: digits };
 }

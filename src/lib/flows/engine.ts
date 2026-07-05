@@ -305,7 +305,12 @@ async function isDuplicateInbound(
     .from("flow_run_events")
     .select("id", { count: "exact", head: true })
     .in("flow_run_id", runIds)
-    .eq("event_type", "reply_received")
+    // Both the entry message (logged as "started") and every subsequent tap
+    // ("reply_received") carry meta_message_id. Match either — otherwise a
+    // Meta retry of the *entry* message finds no "reply_received" for its id,
+    // slips past dedupe, and is mis-processed as a stray reply (spurious
+    // reprompt / premature handoff).
+    .in("event_type", ["reply_received", "started"])
     .filter("payload->>meta_message_id", "eq", metaMessageId);
   return (count ?? 0) > 0;
 }

@@ -231,7 +231,12 @@ interface ExecuteArgs {
   triggerEvent: string
 }
 
-async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
+type StepScopeOutcome = {
+  status: 'success' | 'partial' | 'failed'
+  errorMessage: string | null
+}
+
+async function executeStepsFrom(args: ExecuteArgs): Promise<StepScopeOutcome> {
   const db = supabaseAdmin()
 
   const baseQuery = db
@@ -250,13 +255,13 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
 
   if (stepsErr) {
     await finalizeLog(args.logId, 'failed', stepsErr.message)
-    return
+    return { status: 'failed', errorMessage: stepsErr.message }
   }
   if (!steps || steps.length === 0) {
     if (args.parentStepId === null && args.logId) {
       await finalizeLog(args.logId, 'success', null)
     }
-    return
+    return { status: 'success', errorMessage: null }
   }
 
   const results: AutomationLogStepResult[] = []
@@ -291,7 +296,7 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
       })
       status = 'partial'
       await appendResults(args.logId, results, status, errorMessage)
-      return
+      return { status, errorMessage }
     }
 
     try {
@@ -306,13 +311,21 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
         })
         // Recurse into the chosen branch at position 0 (children use their
         // own ordering within the branch scope).
-        await executeStepsFrom({
+        const branchOutcome = await executeStepsFrom({
           ...args,
           parentStepId: step.id,
           branch: taken ? 'yes' : 'no',
           startPosition: 0,
           logId: args.logId,
         })
+        // Propagate a branch failure up: without this the parent would mark
+        // the whole run 'success' and keep executing later top-level steps
+        // even though a step inside the taken branch threw.
+        if (branchOutcome.status === 'failed') {
+          status = 'failed'
+          errorMessage = branchOutcome.errorMessage
+          break
+        }
         continue
       }
 
@@ -343,6 +356,7 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
     // Nested branch — just append results; parent scope decides final status.
     await appendResults(args.logId, results, null, errorMessage)
   }
+  return { status, errorMessage }
 }
 
 async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string> {

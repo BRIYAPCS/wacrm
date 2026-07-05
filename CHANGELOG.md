@@ -9,6 +9,46 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.41.1] — 2026-07-05
+
+Deep full-app audit (4 parallel review passes) + fixes. No migration required.
+
+### Fixed
+
+- **Contact tags/custom-fields could be wiped by a failed save.** Both used a
+  blind delete-then-insert: if the insert failed after the delete committed
+  (network blip, constraint error), the contact lost *all* its tags / custom
+  values. Now an idempotent upsert-then-prune — a mid-failure leaves extra
+  rows at worst, never zero.
+- **Phone field mis-parsed a stored number without a country code.** A legacy
+  value like `2025551234` (no `+`) was prefix-matched to Egypt (+20). It now
+  stays under the home country and saves as correct E.164 (`+1…`).
+- **Delivery-tick ack could mutate the wrong message.** A `message.ack`
+  updated any row whose id matched, unscoped — a read receipt for an inbound
+  message could flip a customer's row `delivered`→`read`. Now scoped to
+  outbound (agent) rows on both the WAHA and Meta webhooks, and the WAHA key
+  is escaped before its `LIKE` match.
+- **Flow could reprompt/hand off on a Meta retry of the entry message.** The
+  dedupe only matched `reply_received` events; the entry message logs as
+  `started`, so its retry slipped through and was treated as a stray reply.
+- **Automation branch failures were reported as success.** A step that threw
+  inside a condition branch left the run marked `success` and kept executing
+  later top-level steps; the failure now propagates and halts the run.
+- **Broadcasts weren't gated server-side.** A `plan_overrides` disabling
+  broadcasts hid the UI but both broadcast APIs still sent; they now enforce
+  the `broadcasts` entitlement. The v1 response also reports `merged`
+  (duplicate recipients collapsed) so the accounting balances.
+- **Middleware missed four dashboard sections.** `/agents`, `/flows`,
+  `/notifications`, `/reports` weren't in the protected-paths list, so an
+  unauthenticated request got the SSR shell instead of a redirect (client
+  backstop still applied). Added them.
+
+### Security
+
+- **WAHA webhook now fails closed in production.** If `WAHA_WEBHOOK_HMAC_KEY`
+  is unset, requests are rejected in production instead of accepted
+  unauthenticated (the skip remains a local/test convenience only).
+
 ## [0.41.0] — 2026-07-05
 
 ### Added

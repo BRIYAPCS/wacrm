@@ -48,6 +48,16 @@ export async function POST(request: Request) {
   try {
     const ctx = await requireApiKey(request, 'broadcasts:send');
 
+    // The scope grants API access; the plan still has to include broadcasts.
+    // A plan_overrides can disable the feature independently of the key scope.
+    if (!ctx.entitlements.features.has('broadcasts')) {
+      return fail(
+        'plan_upgrade_required',
+        "Broadcasts aren't included in your plan.",
+        403,
+      );
+    }
+
     const body = (await request.json().catch(() => null)) as Record<
       string,
       unknown
@@ -87,6 +97,7 @@ export async function POST(request: Request) {
         total_recipients: plan.planned.length,
         accepted: plan.planned.length,
         rejected: plan.rejected,
+        merged: plan.merged,
       },
       202
     );
