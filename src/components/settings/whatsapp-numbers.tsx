@@ -16,7 +16,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Check, Loader2, Pencil, Star, Trash2, X } from 'lucide-react';
+import { Check, Loader2, Pencil, Star, X } from 'lucide-react';
+import { LinkNumberQr } from './link-number-qr';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -42,15 +43,15 @@ interface NumberRow {
   last_registration_error: string | null;
 }
 
-/** A short identifier line for a number, provider-aware. */
+/**
+ * Subtitle for a number — PROVIDER-BLIND. Tenants must not learn which
+ * gateway (and therefore cost) is behind a number, so we never show the
+ * provider name, credentials, or instance/phone-number IDs — only the
+ * display number (if paired) or a link prompt.
+ */
 function subtitleFor(row: NumberRow): string {
-  if (row.provider === 'wsapi') {
-    const who = row.phone_number ?? `…${(row.wsapi_instance_id ?? '').slice(-6)}`;
-    return `wsapi.chat · ${who}`;
-  }
-  return `Meta · ID …${(row.phone_number_id ?? '').slice(-6)}${
-    row.last_registration_error ? ' · registration incomplete' : ''
-  }`;
+  if (row.phone_number) return row.phone_number;
+  return row.status === 'connected' ? 'Connected' : 'Not linked yet';
 }
 
 function notifyChanged() {
@@ -62,6 +63,7 @@ export function WhatsAppNumbers() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftLabel, setDraftLabel] = useState('');
+  const [linkId, setLinkId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -120,46 +122,33 @@ export function WhatsAppNumbers() {
     }
   };
 
-  const remove = async (row: NumberRow) => {
-    const name = row.label || 'this number';
-    if (
-      !window.confirm(
-        `Remove "${name}"? Conversations on this number stay in the inbox but you won't be able to reply from it until it's reconnected.`,
-      )
-    )
-      return;
-    setBusyId(row.id);
-    try {
-      // WSAPI rows log out + delete via their own endpoint; Meta rows use
-      // the shared config DELETE.
-      const url =
-        row.provider === 'wsapi'
-          ? `/api/whatsapp/wsapi/${encodeURIComponent(row.id)}`
-          : `/api/whatsapp/config?id=${encodeURIComponent(row.id)}`;
-      const res = await fetch(url, { method: 'DELETE' });
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? 'Failed');
-      toast.success('Number removed');
-      await load();
-      notifyChanged();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove');
-    } finally {
-      setBusyId(null);
-    }
-  };
+  // Still loading.
+  if (!numbers) return null;
 
-  // Hide the panel entirely until the account has at least one number —
-  // the connection form below already covers the empty state.
-  if (!numbers || numbers.length === 0) return null;
+  // Managed model: numbers are provisioned by the platform. When there are
+  // none, tell the tenant to reach out rather than exposing any setup.
+  if (numbers.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>WhatsApp</CardTitle>
+          <CardDescription>
+            No WhatsApp number is connected to your account yet. Contact your
+            provider to get one set up.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Connected numbers</CardTitle>
+        <CardTitle>WhatsApp numbers</CardTitle>
         <CardDescription>
           {numbers.length === 1
-            ? 'One WhatsApp number is connected. Add another below to run several numbers (e.g. Sales and Support) from one inbox.'
-            : `${numbers.length} WhatsApp numbers connected. Replies go out from the number each conversation is on; new outbound and broadcasts use the default.`}
+            ? 'Your WhatsApp number. Replies go out from the number each conversation is on.'
+            : `${numbers.length} WhatsApp numbers. Replies go out from the number each conversation is on; new outbound and broadcasts use the default.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -208,9 +197,6 @@ export function WhatsAppNumbers() {
                         <Star className="h-3 w-3" /> Default
                       </span>
                     )}
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                      {row.provider === 'wsapi' ? 'wsapi.chat' : 'Meta'}
-                    </span>
                   </div>
                 )}
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -220,6 +206,13 @@ export function WhatsAppNumbers() {
 
               {editingId !== row.id && (
                 <div className="flex items-center gap-1">
+                  {/* A provisioned number that still needs the customer to
+                      pair their phone (provider-blind link flow). */}
+                  {!connected && row.provider === 'wsapi' && (
+                    <Button size="sm" onClick={() => setLinkId(row.id)}>
+                      Link your number
+                    </Button>
+                  )}
                   {!row.is_default && (
                     <Button
                       size="sm"
@@ -243,22 +236,24 @@ export function WhatsAppNumbers() {
                   >
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 text-red-400 hover:text-red-300"
-                    title="Remove"
-                    disabled={busy}
-                    onClick={() => remove(row)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
               )}
             </div>
           );
         })}
       </CardContent>
+
+      {linkId && (
+        <LinkNumberQr
+          numberId={linkId}
+          open={!!linkId}
+          onOpenChange={(o) => !o && setLinkId(null)}
+          onConnected={() => {
+            load();
+            notifyChanged();
+          }}
+        />
+      )}
     </Card>
   );
 }

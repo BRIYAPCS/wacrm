@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
 
 import { PLAN_TIERS, PLAN_LABELS, type FeatureKey } from "@/lib/plans/catalog";
+import { SuperadminWhatsapp } from "./superadmin-whatsapp";
 
 // Features an admin can force-ON as a per-account add-on (over the base
 // tier). Checking a box sets plan_overrides.features[key]=true; unchecking
@@ -39,6 +40,7 @@ export function SuperadminPanel() {
   const [accounts, setAccounts] = useState<AccountRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [waAccount, setWaAccount] = useState<{ id: string; name: string } | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/superadmin/accounts");
@@ -130,6 +132,13 @@ export function SuperadminPanel() {
                       <div className="font-mono text-[11px] text-muted-foreground">
                         {a.id.slice(0, 8)}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setWaAccount({ id: a.id, name: a.name })}
+                        className="mt-1 text-[11px] text-primary hover:underline"
+                      >
+                        Manage WhatsApp
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{a.member_count}</td>
                     <td className="px-4 py-3">
@@ -174,6 +183,15 @@ export function SuperadminPanel() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {waAccount && (
+        <SuperadminWhatsapp
+          accountId={waAccount.id}
+          accountName={waAccount.name}
+          open={!!waAccount}
+          onOpenChange={(o) => !o && setWaAccount(null)}
+        />
       )}
     </div>
   );
