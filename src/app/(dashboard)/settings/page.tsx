@@ -18,6 +18,7 @@ import { BusinessHoursSettings } from '@/components/settings/business-hours-sett
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
+import { BillingPanel } from '@/components/settings/billing-panel';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import { AuditLogSettings } from '@/components/settings/audit-log-settings';
 import {
@@ -71,6 +72,7 @@ export default function SettingsPage() {
     fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,
     members: <MembersTab />,
+    billing: <BillingPanel />,
     api: <ApiKeysSettings />,
     audit: <AuditLogSettings />,
   };

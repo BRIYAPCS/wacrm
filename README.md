@@ -176,6 +176,7 @@ Guides in this repo:
 - [New-customer redeploy checklist](./docs/new-customer-checklist.md)
 - [Database setup & one-command deploy](./docs/database-setup.md)
 - [AI assistant — providers & knowledge base](./docs/ai-assistant.md)
+- [Plans & billing — subscription tiers](./docs/plans-and-billing.md)
 - [Automations, Flows & the cron scheduler](./docs/automations-and-cron.md)
 - [Email deliverability (custom SMTP)](./docs/email-setup.md)
 - [Public REST API](./docs/public-api.md)
