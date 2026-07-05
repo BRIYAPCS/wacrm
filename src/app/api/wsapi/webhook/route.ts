@@ -10,11 +10,13 @@
 // before trusting anything (constant-time compare).
 // ============================================================
 
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import crypto from "node:crypto";
 
 import { jidToPhone } from "@/lib/wsapi/config";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest-inbound";
+import { enrichContactFromWsapi } from "@/lib/wsapi/profile";
+import { decrypt } from "@/lib/whatsapp/encryption";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -105,7 +107,7 @@ export async function POST(request: Request) {
   const admin = supabaseAdmin();
   const { data: cfg } = await admin
     .from("whatsapp_config")
-    .select("id, account_id, user_id")
+    .select("id, account_id, user_id, access_token")
     .eq("provider", "wsapi")
     .eq("wsapi_instance_id", instanceId)
     .maybeSingle();
@@ -141,16 +143,25 @@ export async function POST(request: Request) {
   }
 
   try {
+    const phone = jidToPhone(m.remoteJid);
     const result = await ingestInboundMessage({
       accountId: cfg.account_id,
       ownerUserId: cfg.user_id,
       configId: cfg.id,
-      phone: jidToPhone(m.remoteJid),
+      phone,
       name: m.pushName,
       text: m.text,
       messageId: m.id || `wsapi-${Date.now()}`,
       timestampSec: m.timestampSec,
     });
+
+    // Enrich the contact's WhatsApp profile (photo + about) after we've
+    // responded — best-effort, staleness-guarded, using this number's creds.
+    if (result?.contactId) {
+      const creds = { instanceId, apiKey: decrypt(cfg.access_token) };
+      after(() => enrichContactFromWsapi(admin, creds, result.contactId, phone));
+    }
+
     return NextResponse.json({ received: true, conversationId: result?.conversationId ?? null });
   } catch (err) {
     console.error("[wsapi webhook] ingest error:", err);

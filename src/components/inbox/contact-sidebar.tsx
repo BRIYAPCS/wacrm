@@ -17,6 +17,7 @@ import {
   Play,
   Loader2,
   Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,38 @@ const SENTIMENT_CLASS: Record<AiSummary["sentiment"], string> = {
 export function ContactSidebar({ contact, className }: ContactSidebarProps) {
   const { accountId, canSendMessages } = useAuth();
   const [copied, setCopied] = useState(false);
+  // Optimistic profile after a manual refresh, keyed to the contact so it
+  // never bleeds onto a different conversation (no reset effect needed).
+  const [profileOverride, setProfileOverride] = useState<{
+    id: string;
+    avatar_url: string | null;
+    about: string | null;
+  } | null>(null);
+  const [refreshingProfile, setRefreshingProfile] = useState(false);
+
+  const handleRefreshProfile = useCallback(async () => {
+    if (!contact) return;
+    setRefreshingProfile(true);
+    try {
+      const res = await fetch(`/api/whatsapp/contacts/${contact.id}/refresh-profile`, {
+        method: "POST",
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { avatar_url?: string | null; about?: string | null; error?: string }
+        | null;
+      if (!res.ok) throw new Error(data?.error ?? "Failed to refresh profile");
+      setProfileOverride({
+        id: contact.id,
+        avatar_url: data?.avatar_url ?? null,
+        about: data?.about ?? null,
+      });
+      toast.success(data?.avatar_url ? "Profile updated" : "No public photo available");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't refresh profile");
+    } finally {
+      setRefreshingProfile(false);
+    }
+  }, [contact]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
@@ -284,6 +317,9 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
 
   const displayName = contact.name || contact.phone;
   const initials = displayName.charAt(0).toUpperCase();
+  const usingOverride = profileOverride?.id === contact.id;
+  const avatarUrl = (usingOverride ? profileOverride?.avatar_url : null) ?? contact.avatar_url;
+  const about = (usingOverride ? profileOverride?.about : null) ?? contact.about;
 
   return (
     <div
@@ -297,10 +333,10 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-lg font-semibold text-foreground">
-              {contact.avatar_url ? (
+              {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- arbitrary-host avatar URL (pasteable from the UI); next/image would need an open remotePatterns allowlist (image-proxy abuse vector)
                 <img
-                  src={contact.avatar_url}
+                  src={avatarUrl}
                   alt={displayName}
                   className="h-16 w-16 rounded-full object-cover"
                 />
@@ -313,6 +349,22 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
             </h3>
             {contact.company && (
               <p className="text-xs text-muted-foreground">{contact.company}</p>
+            )}
+            {about && (
+              <p className="mt-1 max-w-[220px] text-xs italic text-muted-foreground">
+                “{about}”
+              </p>
+            )}
+            {canSendMessages && (
+              <button
+                type="button"
+                onClick={handleRefreshProfile}
+                disabled={refreshingProfile}
+                className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+              >
+                <RefreshCw className={cn("h-3 w-3", refreshingProfile && "animate-spin")} />
+                Refresh photo
+              </button>
             )}
           </div>
 

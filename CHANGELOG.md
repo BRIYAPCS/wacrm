@@ -9,6 +9,31 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.34.0] — 2026-07-05
+
+**WhatsApp contact profiles** — pull a customer's photo + "about" so the
+contact panel shows their real WhatsApp profile. **Migration required:**
+apply `supabase/migrations/054_contact_profile.sql`.
+
+### Added
+
+- When a customer messages on a **wsapi.chat** number, the app fetches their
+  **profile photo** and **"about"** text and stores them on the contact
+  (best-effort, after the reply is sent, refreshed at most daily).
+- The photo now shows in the **contact sidebar, conversation list, and
+  thread header** (falling back to the initial), and the "about" appears in
+  the sidebar. A **Refresh photo** button re-pulls on demand.
+
+### Notes
+
+- Only **wsapi.chat** can supply a photo/about (it links a real WhatsApp
+  session). **Meta** and **Twilio** provide only the display name (already
+  stored) — WhatsApp doesn't expose customer profile media through the
+  official APIs.
+- Photos depend on the customer's WhatsApp privacy settings (many are
+  "contacts only" → no photo), and WhatsApp CDN URLs expire, so the panel
+  falls back to the initial when a photo isn't available.
+
 ## [0.33.0] — 2026-07-05
 
 New **Unlimited** tier + WhatsApp-number caps that scale by plan.

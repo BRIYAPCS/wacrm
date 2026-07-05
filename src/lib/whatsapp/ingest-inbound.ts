@@ -23,10 +23,10 @@ export interface InboundMessage {
   timestampSec: number;
 }
 
-/** Returns { conversationId } on success, or null if it couldn't ingest. */
+/** Returns { conversationId, contactId } on success, or null if it couldn't ingest. */
 export async function ingestInboundMessage(
   msg: InboundMessage,
-): Promise<{ conversationId: string } | null> {
+): Promise<{ conversationId: string; contactId: string } | null> {
   const admin = supabaseAdmin();
 
   // --- contact ---
@@ -120,7 +120,7 @@ export async function ingestInboundMessage(
     created_at: new Date(msg.timestampSec * 1000).toISOString(),
   });
   if (msgErr) {
-    if (isUniqueViolation(msgErr)) return { conversationId }; // dedupe
+    if (isUniqueViolation(msgErr)) return { conversationId, contactId }; // dedupe
     console.error("[inbound] message insert failed:", msgErr);
     return null;
   }
@@ -131,5 +131,5 @@ export async function ingestInboundMessage(
     p_last_at: new Date(msg.timestampSec * 1000).toISOString(),
   });
 
-  return { conversationId };
+  return { conversationId, contactId };
 }
