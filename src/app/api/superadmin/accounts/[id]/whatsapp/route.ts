@@ -12,6 +12,12 @@ import { NextResponse } from "next/server";
 import { requirePlatformAdmin, NotPlatformAdminError } from "@/lib/auth/platform";
 import { encrypt } from "@/lib/whatsapp/encryption";
 import { isWhatsAppProvider } from "@/lib/whatsapp/providers/registry";
+import {
+  effectiveTier,
+  parseOverrides,
+  resolveEntitlements,
+  checkLimit,
+} from "@/lib/plans/entitlements";
 import { wsapiSessionStatus } from "@/lib/wsapi/management";
 import { jidToPhone } from "@/lib/wsapi/config";
 import { WsapiError } from "@/lib/wsapi/client";
@@ -56,10 +62,32 @@ export async function POST(
     // The account owner is the audit/attribution user for provisioned rows.
     const { data: account } = await supabase
       .from("accounts")
-      .select("owner_user_id")
+      .select("owner_user_id, plan, plan_overrides")
       .eq("id", accountId)
       .maybeSingle();
     if (!account) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+
+    // Provisioning respects the account's plan: the number of WhatsApp
+    // numbers (all providers combined) is capped by its tier. Bump the plan
+    // or add a plan_overrides["limits"]["whatsapp_numbers"] to go higher.
+    const { count: numberCount } = await supabase
+      .from("whatsapp_config")
+      .select("id", { count: "exact", head: true })
+      .eq("account_id", accountId);
+    const entitlements = resolveEntitlements(
+      effectiveTier(account.plan as string | null, process.env.NEXT_PUBLIC_DEFAULT_PLAN ?? null),
+      parseOverrides(account.plan_overrides),
+    );
+    const limit = checkLimit(entitlements, "whatsapp_numbers", numberCount ?? 0);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        {
+          error: `This account's ${entitlements.tier} plan allows ${limit.limit} WhatsApp number(s). Upgrade the plan or add a whatsapp_numbers override.`,
+          code: "plan_limit",
+        },
+        { status: 403 },
+      );
+    }
 
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     const provider = body?.provider;
@@ -126,11 +154,7 @@ export async function POST(
     }
 
     // First number becomes the account default.
-    const { count } = await supabase
-      .from("whatsapp_config")
-      .select("id", { count: "exact", head: true })
-      .eq("account_id", accountId);
-    row.is_default = (count ?? 0) === 0;
+    row.is_default = (numberCount ?? 0) === 0;
 
     const { data: inserted, error } = await supabase
       .from("whatsapp_config")

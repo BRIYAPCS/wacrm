@@ -49,10 +49,24 @@ describe("catalog completeness", () => {
     }
   });
 
-  it("tiers are monotonically ranked and advanced is the default", () => {
+  it("tiers are monotonically ranked and unlimited is the default", () => {
     expect(planRank("basic")).toBeLessThan(planRank("pro"));
     expect(planRank("pro")).toBeLessThan(planRank("advanced"));
-    expect(DEFAULT_TIER).toBe("advanced");
+    expect(planRank("advanced")).toBeLessThan(planRank("unlimited"));
+    expect(DEFAULT_TIER).toBe("unlimited");
+  });
+
+  it("WhatsApp-number caps scale by tier", () => {
+    expect(PLANS.basic.limits.whatsapp_numbers).toBe(1);
+    expect(PLANS.pro.limits.whatsapp_numbers).toBe(5);
+    expect(PLANS.advanced.limits.whatsapp_numbers).toBe(10);
+    expect(PLANS.unlimited.limits.whatsapp_numbers).toBe(-1);
+  });
+
+  it("unlimited turns everything on and uncaps every limit", () => {
+    const e = resolveEntitlements("unlimited");
+    for (const f of ALL_FEATURES) expect(hasFeature(e, f)).toBe(true);
+    for (const l of ALL_LIMITS) expect(e.limits[l]).toBe(-1);
   });
 });
 
@@ -64,9 +78,9 @@ describe("effectiveTier", () => {
     expect(effectiveTier(null, "pro")).toBe("pro");
     expect(effectiveTier("", "pro")).toBe("pro");
   });
-  it("falls back to advanced for unknown values (fail-open)", () => {
-    expect(effectiveTier(null, null)).toBe("advanced");
-    expect(effectiveTier("garbage", "also-bad")).toBe("advanced");
+  it("falls back to unlimited for unknown values (fail-open)", () => {
+    expect(effectiveTier(null, null)).toBe("unlimited");
+    expect(effectiveTier("garbage", "also-bad")).toBe("unlimited");
   });
 });
 
@@ -79,11 +93,11 @@ describe("resolveEntitlements", () => {
     expect(hasFeature(e, "broadcasts")).toBe(true);
   });
 
-  it("advanced includes everything and is mostly unlimited", () => {
+  it("advanced includes every feature but keeps finite caps", () => {
     const e = resolveEntitlements("advanced");
     for (const f of ALL_FEATURES) expect(hasFeature(e, f)).toBe(true);
-    expect(e.limits.seats).toBe(-1);
-    expect(e.limits.contacts).toBe(-1);
+    expect(e.limits.whatsapp_numbers).toBe(10);
+    expect(e.limits.seats).toBeGreaterThan(0); // finite, not unlimited
   });
 
   it("applies feature overrides on top of the base tier (add-on)", () => {
@@ -125,7 +139,7 @@ describe("checkLimit", () => {
     expect(checkLimit(e, "seats", 3).allowed).toBe(false); // over-cap (downgrade) stays blocked
   });
   it("always allows when unlimited", () => {
-    const e = resolveEntitlements("advanced"); // seats: -1
+    const e = resolveEntitlements("unlimited"); // seats: -1
     expect(checkLimit(e, "seats", 9_999).allowed).toBe(true);
   });
 });
