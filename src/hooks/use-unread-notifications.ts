@@ -25,17 +25,21 @@ export function useUnreadNotifications(): number {
     const supabase = createClient();
     let cancelled = false;
 
-    (async () => {
-      // head:true skips fetching rows — we only need the `count`
-      // supabase-js returns alongside the (empty) response body.
+    // Full reconcile against the server (head:true skips the rows, we only
+    // want the count). Called on mount, on realtime re-subscribe, and on tab
+    // re-focus — the incremental deltas below are best-effort, and a missed
+    // (or duplicate) event would otherwise leave the badge permanently off.
+    const load = async () => {
       const { count: unreadCount, error } = await supabase
         .from("notifications")
         .select("*", { count: "exact", head: true })
         .is("read_at", null);
       if (cancelled || error) return;
       setCount(unreadCount ?? 0);
-    })();
+    };
+    load();
 
+    let subscribedOnce = false;
     const channel = supabase
       .channel(`notifications-unread-count-${++channelSeq}`)
       .on(
@@ -57,10 +61,21 @@ export function useUnreadNotifications(): number {
           }
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          if (subscribedOnce) load();
+          subscribedOnce = true;
+        }
+      });
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
       supabase.removeChannel(channel);
     };
   }, []);

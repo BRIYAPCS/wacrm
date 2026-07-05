@@ -28,7 +28,7 @@ import {
   PanelRightClose,
   Wallpaper,
 } from "lucide-react";
-import { format, isToday, isYesterday, differenceInHours } from "date-fns";
+import { format, isToday, isYesterday } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -186,7 +186,7 @@ export function MessageThread({
   onOpenContactInfo,
   onBackgroundChange,
 }: MessageThreadProps) {
-  const { user, profile, account, canEditSettings } = useAuth();
+  const { user, profile, account, canEditSettings, canSendMessages } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -240,18 +240,35 @@ export function MessageThread({
     };
   }, []);
 
-  // 24-hour session timer
-  const sessionInfo = useMemo(() => {
-    if (!messages.length) return { expired: false, remaining: "" };
+  // Ticking clock so the 24-hour window advances with real time, not only
+  // when `messages` changes — otherwise a thread left open across the boundary
+  // keeps showing a live composer well past expiry (and vice-versa).
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTs(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
-    // Find last customer message
+  // 24-hour session timer.
+  const sessionInfo = useMemo(() => {
+    // Find last customer (inbound) message.
     const lastCustomerMsg = [...messages]
       .reverse()
       .find((m) => m.sender_type === "customer");
 
-    if (!lastCustomerMsg) return { expired: true, remaining: "No customer messages" };
+    // No inbound message → there is no open 24h window, so the free-text
+    // composer must be closed (template-only). Covers a brand-new thread and
+    // an agent-only thread alike.
+    if (!lastCustomerMsg) {
+      return {
+        expired: true,
+        remaining: messages.length ? "No customer messages" : "",
+      };
+    }
 
-    const hoursSince = differenceInHours(new Date(), new Date(lastCustomerMsg.created_at));
+    // Millisecond delta (differenceInHours truncates, drifting up to ~1h).
+    const hoursSince =
+      (nowTs - new Date(lastCustomerMsg.created_at).getTime()) / 3_600_000;
     const expired = hoursSince >= 24;
 
     if (expired) {
@@ -262,10 +279,10 @@ export function MessageThread({
     const remaining =
       hoursLeft >= 1
         ? `${Math.floor(hoursLeft)}h remaining`
-        : `${Math.floor(hoursLeft * 60)}m remaining`;
+        : `${Math.max(1, Math.floor(hoursLeft * 60))}m remaining`;
 
     return { expired, remaining };
-  }, [messages]);
+  }, [messages, nowTs]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -587,10 +604,16 @@ export function MessageThread({
       if (!conversation) return;
 
       const supabase = createClient();
-      await supabase
+      // Check the write before optimistically flipping — a viewer (RLS),
+      // network failure, etc. would otherwise show a status the DB never took.
+      const { error } = await supabase
         .from("conversations")
         .update({ status })
         .eq("id", conversation.id);
+      if (error) {
+        toast.error("Failed to update status");
+        return;
+      }
 
       onStatusChange(conversation.id, status);
     },
@@ -1023,10 +1046,15 @@ export function MessageThread({
             </button>
           )}
 
-          {/* Status dropdown */}
+          {/* Status dropdown — mutates the conversation, so viewers (read-only)
+              can't use it (the DB rejects their write too; this stops the
+              optimistic flip from ever showing). */}
           <DropdownMenu>
-            <DropdownMenuTrigger className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+            <DropdownMenuTrigger
+              disabled={!canSendMessages}
+              title={canSendMessages ? undefined : "Read-only"}
+              className={cn(
+                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent",
                   currentStatus?.color ?? "text-muted-foreground"
                 )}>
                 {currentStatus?.label ?? "Status"}
@@ -1048,11 +1076,13 @@ export function MessageThread({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Assign dropdown */}
+          {/* Assign dropdown — mutating; viewers are read-only. */}
           <DropdownMenu>
             <DropdownMenuTrigger
+              disabled={!canSendMessages}
+              title={canSendMessages ? undefined : "Read-only"}
               className={cn(
-                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent",
                 assignedAgentId ? "text-primary" : "text-muted-foreground"
               )}
             >
