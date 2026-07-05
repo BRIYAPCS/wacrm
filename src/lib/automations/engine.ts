@@ -16,6 +16,7 @@ import type {
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { engineSendText, engineSendTemplate } from './meta-send'
+import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 
 // ------------------------------------------------------------
 // Public API
@@ -527,11 +528,18 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'send_webhook': {
       const cfg = step.step_config as SendWebhookStepConfig
       if (!cfg.url) throw new Error('send_webhook needs url')
+      // SSRF guard: the URL is account-admin-supplied and we fetch it from
+      // inside our network. Reject internal/reserved targets, and disable
+      // redirect-following so a public URL can't 3xx-bounce to an internal one.
+      if (!(await isDeliverableUrl(cfg.url))) {
+        throw new Error('send_webhook url is not allowed (private/internal address)')
+      }
       const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
       const res = await fetch(cfg.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
         body,
+        redirect: 'manual',
       })
       if (!res.ok) throw new Error(`webhook returned ${res.status}`)
       return `webhook ${res.status}`

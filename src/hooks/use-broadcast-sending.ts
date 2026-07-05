@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { normalizeKey } from '@/lib/contacts/dedupe';
 import { Contact, MessageTemplate } from '@/types';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -241,26 +242,35 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       if (row.phone) uniqueByPhone.set(row.phone, row);
     }
     const phones = [...uniqueByPhone.keys()];
+    // Match on the NORMALIZED phone the DB stores + uniquely indexes
+    // (account_id, phone_normalized), scoped to the ACCOUNT (not user_id).
+    // Matching the raw string or filtering by user_id misses a teammate's
+    // contact or a differently-formatted duplicate — the insert then hits the
+    // unique index (23505) and aborts the whole broadcast.
+    const normOf = (p: string) => normalizeKey(p);
+    const normalizedPhones = [...new Set(phones.map(normOf).filter(Boolean))];
 
-    // Single round-trip lookup of existing contacts by phone.
-    const { data: existing, error: lookupErr } = await supabase
-      .from('contacts')
-      .select('*')
-      .eq('user_id', user.id)
-      .in('phone', phones);
-    if (lookupErr) {
-      throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
+    const byNorm = new Map<string, Contact>();
+    async function loadExisting() {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('account_id', accountId)
+        .in('phone_normalized', normalizedPhones);
+      if (error) {
+        throw new Error(`Failed to look up CSV contacts: ${error.message}`);
+      }
+      for (const c of (data ?? []) as Contact[]) {
+        if (c.phone) byNorm.set(normOf(c.phone), c);
+      }
     }
+    await loadExisting();
 
-    const byPhone = new Map<string, Contact>();
-    for (const c of (existing ?? []) as Contact[]) {
-      if (c.phone) byPhone.set(c.phone, c);
-    }
-
-    // Insert only missing contacts, in one batch per 200 rows (PostgREST
-    // has a default payload cap — 200 keeps individual requests small).
+    // Insert the ones we don't already have. Upsert with ignoreDuplicates on
+    // the real conflict target so a race / normalized-equal row is skipped,
+    // not thrown.
     const missing = phones
-      .filter((p) => !byPhone.has(p))
+      .filter((p) => !byNorm.has(normOf(p)))
       .map((phone) => ({
         user_id: user.id,
         account_id: accountId,
@@ -271,21 +281,23 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     const INSERT_CHUNK = 200;
     for (let i = 0; i < missing.length; i += INSERT_CHUNK) {
       const chunk = missing.slice(i, i + INSERT_CHUNK);
-      const { data: inserted, error: insertErr } = await supabase
+      const { error: insertErr } = await supabase
         .from('contacts')
-        .insert(chunk)
-        .select();
+        .upsert(chunk, {
+          onConflict: 'account_id,phone_normalized',
+          ignoreDuplicates: true,
+        });
       if (insertErr) {
         throw new Error(`Failed to create CSV contacts: ${insertErr.message}`);
       }
-      for (const c of (inserted ?? []) as Contact[]) {
-        if (c.phone) byPhone.set(c.phone, c);
-      }
     }
+    // Re-load so we resolve ids for everything — inserts plus any that already
+    // existed under a different raw format (skipped by the upsert above).
+    if (missing.length > 0) await loadExisting();
 
     // Preserve input order so analytics roughly matches the CSV order.
     return phones
-      .map((p) => byPhone.get(p))
+      .map((p) => byNorm.get(normOf(p)))
       .filter((c): c is Contact => Boolean(c));
   }
 

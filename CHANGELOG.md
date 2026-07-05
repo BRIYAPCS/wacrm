@@ -9,6 +9,37 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.37.2] — 2026-07-05
+
+### Fixed (deep-audit batch)
+
+- **Security — no non-Meta secret sent to Meta.** `/api/whatsapp/react` and
+  `/api/whatsapp/broadcast` now reject non-Meta numbers instead of decrypting a
+  WAHA/WSAPI/Twilio secret and sending it to the Meta Graph API.
+- **Security — SSRF guard on automation webhooks.** The `send_webhook`
+  automation step now validates the URL with `isDeliverableUrl` and disables
+  redirect-following, matching the knowledge-base fetch's protections.
+- **Security — public API fails closed.** The API-key entitlement read no longer
+  falls through to the default tier on a DB error/missing row (which could open
+  the paid API for free); it rejects instead.
+- **Security — platform-admin allowlist requires a confirmed email**, so an
+  unverified signup with a listed address can't self-escalate.
+- **Broadcasts now send past ~50 recipients.** The per-batch dispatch was capped
+  by a 5/min rate limit; raised so realistic campaigns clear.
+- **"Broadcast to selected" / CSV audiences no longer abort or duplicate** — the
+  contact lookup now matches on the account's normalized-phone unique key
+  instead of `user_id` + raw phone.
+- **Broadcast pre-seed hand-off is reliable** — it's consumed in an effect, not
+  a `useState` initializer (which React could double-invoke and drop, silently
+  broadcasting to *all* contacts).
+- **Reply routing on non-Meta numbers** — the conversation's number is now
+  actually persisted for wsapi/waha/twilio sends (the stamping update was a
+  no-op), so replies stay on the right number for multi-number accounts.
+- **Contacts search no longer 400s** on commas/parentheses (sanitized before the
+  PostgREST filter).
+- **WAHA inbound never fabricates a phone** from an unresolved LID — it skips the
+  event instead of creating a bogus contact.
+
 ## [0.37.1] — 2026-07-05
 
 ### Fixed
