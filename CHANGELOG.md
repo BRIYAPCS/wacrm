@@ -9,6 +9,23 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.41.0] — 2026-07-05
+
+### Added
+
+- **Country-code dropdown on the phone field.** Adding or editing a contact now
+  shows a country picker (flag + dial code, e.g. 🇺🇸 +1) next to the number, so
+  you choose the country and type just the local digits — no more remembering to
+  prefix `+1`. The value is still stored as a clean E.164 string, and existing
+  numbers are parsed back onto the right country when you reopen a contact.
+
+### Changed
+
+- **Modals and slide-overs no longer close on a click-away.** A stray click on
+  the backdrop (or focus leaving the window) used to dismiss a half-filled form
+  and lose your input. Dialogs and drawers now close only via an explicit
+  action — the ✕, a Cancel/close button, or the Escape key. Applied app-wide.
+
 ## [0.40.4] — 2026-07-05
 
 ### Fixed

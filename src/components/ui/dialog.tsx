@@ -7,8 +7,32 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+function Dialog({ onOpenChange, ...props }: DialogPrimitive.Root.Props) {
+  // Modals close ONLY via an explicit control — the X, a Cancel/close button,
+  // a designed action, or the Escape key. A click on the backdrop (or focus
+  // leaving the dialog) is ignored, so a stray click-away can't discard a
+  // half-filled form. Applies app-wide to every dialog built on this wrapper.
+  const handleOpenChange: NonNullable<DialogPrimitive.Root.Props["onOpenChange"]> = (
+    open,
+    eventDetails,
+  ) => {
+    if (
+      !open &&
+      (eventDetails?.reason === "outside-press" ||
+        eventDetails?.reason === "focus-out")
+    ) {
+      return
+    }
+    onOpenChange?.(open, eventDetails)
+  }
+
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      {...props}
+      onOpenChange={handleOpenChange}
+    />
+  )
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {

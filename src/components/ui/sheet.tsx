@@ -7,8 +7,32 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
-function Sheet({ ...props }: SheetPrimitive.Root.Props) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />
+function Sheet({ onOpenChange, ...props }: SheetPrimitive.Root.Props) {
+  // Same rule as Dialog: a slide-over closes only via an explicit control
+  // (the X, a Cancel/close button, a designed action, or Escape) — never by
+  // clicking the backdrop or focus leaving, so a stray click can't discard a
+  // half-filled deal/flow form.
+  const handleOpenChange: NonNullable<SheetPrimitive.Root.Props["onOpenChange"]> = (
+    open,
+    eventDetails,
+  ) => {
+    if (
+      !open &&
+      (eventDetails?.reason === "outside-press" ||
+        eventDetails?.reason === "focus-out")
+    ) {
+      return
+    }
+    onOpenChange?.(open, eventDetails)
+  }
+
+  return (
+    <SheetPrimitive.Root
+      data-slot="sheet"
+      {...props}
+      onOpenChange={handleOpenChange}
+    />
+  )
 }
 
 function SheetTrigger({ ...props }: SheetPrimitive.Trigger.Props) {
