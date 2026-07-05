@@ -109,6 +109,59 @@ export function presenceLabel(
   }
 }
 
+// ============================================================
+// Manual availability (migration 059) — a status the agent SETS, layered over
+// the automatic online/away/offline presence above. Pure helpers.
+// ============================================================
+
+export type Availability = "available" | "away" | "busy" | "out_of_office";
+
+export interface AvailabilityInfo {
+  availability?: Availability | null;
+  availability_note?: string | null;
+  availability_until?: string | null;
+}
+
+export const AVAILABILITY_META: Record<
+  Availability,
+  { label: string; dot: string; assignable: boolean }
+> = {
+  available: { label: "Available", dot: "bg-green-500", assignable: true },
+  away: { label: "Away", dot: "bg-amber-500", assignable: false },
+  busy: { label: "Busy", dot: "bg-red-500", assignable: true },
+  out_of_office: {
+    label: "Out of office",
+    dot: "bg-slate-400",
+    assignable: false,
+  },
+};
+
+/**
+ * The agent's effective availability: their manual status, unless its
+ * "until" timestamp has passed — in which case it auto-reverts to Available
+ * (no cron; derived here from `now`).
+ */
+export function effectiveAvailability(
+  info: AvailabilityInfo | null | undefined,
+  now: number,
+): Availability {
+  const a = info?.availability ?? "available";
+  if (a === "available") return "available";
+  const until = info?.availability_until
+    ? new Date(info.availability_until).getTime()
+    : NaN;
+  if (!Number.isNaN(until) && now >= until) return "available";
+  return a;
+}
+
+/** Whether a new conversation can be assigned to this agent right now. */
+export function isAssignable(
+  info: AvailabilityInfo | null | undefined,
+  now: number,
+): boolean {
+  return AVAILABILITY_META[effectiveAvailability(info, now)].assignable;
+}
+
 /** Roster header summary, e.g. for "3 online · 1 away · 1 offline". */
 export function summarize(statuses: PresenceStatus[]): {
   online: number;

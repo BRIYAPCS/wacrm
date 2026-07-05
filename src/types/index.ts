@@ -35,6 +35,12 @@ export interface Profile {
    * `@/lib/auth/roles` rather than comparing this string directly.
    */
   account_role?: AccountRole;
+  /** Manual availability the agent sets (migration 059). Layered over the
+   *  automatic online/away/offline presence. `availability_until`, when past,
+   *  auto-reverts to available. See `effectiveAvailability`. */
+  availability?: "available" | "away" | "busy" | "out_of_office";
+  availability_note?: string | null;
+  availability_until?: string | null;
   created_at: string;
 }
 

@@ -5,7 +5,11 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
-import { presenceLabel } from "@/lib/presence";
+import {
+  presenceLabel,
+  effectiveAvailability,
+  AVAILABILITY_META,
+} from "@/lib/presence";
 import { cn } from "@/lib/utils";
 import type {
   Conversation,
@@ -935,6 +939,12 @@ export function MessageThread({
   const assignLabel = assignedAgentId
     ? (currentAssignee?.full_name ?? "Assigned")
     : "Assign";
+  // Out-of-office / Away banner for the assigned agent (Teams-style).
+  const assigneeAvailability = currentAssignee
+    ? effectiveAvailability(currentAssignee, now)
+    : "available";
+  const showAssigneeBanner =
+    !!currentAssignee && !AVAILABILITY_META[assigneeAvailability].assignable;
 
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
@@ -1140,28 +1150,53 @@ export function MessageThread({
                 profiles.map((p) => {
                   const isSelected = p.user_id === assignedAgentId;
                   const presence = getPresence(p.user_id);
+                  const avail = effectiveAvailability(p, now);
+                  const availMeta = AVAILABILITY_META[avail];
+                  // Away / Out-of-office agents show grayed-out and can't be
+                  // newly assigned to (the selected one stays visible so you
+                  // can still reassign AWAY from them).
+                  const assignable = availMeta.assignable;
                   return (
                     <DropdownMenuItem
                       key={p.id}
-                      onClick={() => handleAssignChange(p.user_id)}
+                      disabled={!assignable && !isSelected}
+                      onClick={() => {
+                        if (assignable) handleAssignChange(p.user_id);
+                      }}
                       className={cn(
                         "text-sm",
-                        isSelected ? "text-primary" : "text-popover-foreground"
+                        isSelected ? "text-primary" : "text-popover-foreground",
+                        !assignable && "opacity-50"
                       )}
                     >
-                      <PresenceDot
-                        status={presence}
-                        label={presenceLabel(
-                          presence,
-                          getRow(p.user_id)?.last_seen_at ?? null,
-                          now
-                        )}
-                        className="mr-2"
-                      />
+                      {avail === "available" ? (
+                        <PresenceDot
+                          status={presence}
+                          label={presenceLabel(
+                            presence,
+                            getRow(p.user_id)?.last_seen_at ?? null,
+                            now
+                          )}
+                          className="mr-2"
+                        />
+                      ) : (
+                        <span
+                          title={availMeta.label}
+                          className={cn(
+                            "mr-2 inline-block h-2 w-2 shrink-0 rounded-full",
+                            availMeta.dot
+                          )}
+                        />
+                      )}
                       <span className="flex-1">
                         {p.full_name}
                         {p.user_id === user?.id ? " (me)" : ""}
                       </span>
+                      {avail !== "available" && (
+                        <span className="ml-2 text-[10px] text-muted-foreground">
+                          {availMeta.label}
+                        </span>
+                      )}
                       {isSelected && <Check className="ml-2 h-3 w-3" />}
                     </DropdownMenuItem>
                   );
@@ -1272,6 +1307,24 @@ export function MessageThread({
       </div>
 
       {/* Composer */}
+      {showAssigneeBanner && currentAssignee && (
+        <div className="mx-3 mb-1 flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-1.5 sm:mx-4">
+          <span
+            className={cn(
+              "h-2 w-2 shrink-0 rounded-full",
+              AVAILABILITY_META[assigneeAvailability].dot
+            )}
+          />
+          <p className="text-xs text-primary">
+            {currentAssignee.full_name} is{" "}
+            {AVAILABILITY_META[assigneeAvailability].label.toLowerCase()} and may
+            not respond
+            {currentAssignee.availability_note
+              ? ` — ${currentAssignee.availability_note}`
+              : ""}
+          </p>
+        </div>
+      )}
       <ConversationNotes
         conversationId={conversation.id}
         members={profiles}

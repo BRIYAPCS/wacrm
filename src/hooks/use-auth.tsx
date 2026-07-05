@@ -44,6 +44,10 @@ interface Profile {
   beta_features: string[];
   account_id: string | null;
   account_role: AccountRole | null;
+  /** Manual availability (migration 059) — see `effectiveAvailability`. */
+  availability?: "available" | "away" | "busy" | "out_of_office" | null;
+  availability_note?: string | null;
+  availability_until?: string | null;
 }
 
 interface AccountSummary {
@@ -166,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, availability, availability_note, availability_until",
         )
         .eq("user_id", userId)
         .maybeSingle();

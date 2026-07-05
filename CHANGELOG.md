@@ -9,6 +9,26 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.45.0] — 2026-07-05
+
+### Added
+
+- **Agent availability** (Teams-style presence you set yourself). From the
+  account menu, set **Available / Away / Busy / Out of office**, with an
+  optional note and a "back on" time that auto-reverts you to Available. A
+  status dot shows on your avatar.
+- **Assign-to respects availability.** Agents who are Away or Out of office
+  show **grayed-out and can't be newly assigned** (the currently-assigned one
+  stays visible so you can still reassign away from them). Busy agents stay
+  assignable with a red dot.
+- **Out-of-office banner** in the thread — when the assigned agent is Away or
+  Out of office, a banner notes they "may not respond," with their status note.
+
+  **Migration required:** apply `supabase/migrations/059_agent_availability.sql`
+  (adds `availability` / `availability_note` / `availability_until` to
+  `profiles`). This is separate from, and layered over, the existing automatic
+  online/away/offline presence.
+
 ## [0.44.0] — 2026-07-05
 
 ### Added
