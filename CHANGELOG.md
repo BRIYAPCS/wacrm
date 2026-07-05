@@ -9,6 +9,21 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.35.1] — 2026-07-05
+
+### Fixed
+
+- **WAHA pairing QR now renders.** WAHA's `/auth/qr` endpoint returns a raw
+  binary PNG by default (JSON only with an `Accept: application/json`); the
+  adapter was calling `.json()` on the PNG and getting nothing, so the "Link
+  your number" dialog showed an empty box. It now reads either shape.
+- **WAHA QR is resilient.** A pairing session that expires to `FAILED` (WhatsApp
+  cycles the QR quickly) is auto-restarted and the code waits briefly for a
+  fresh QR to mint, so pairing self-heals instead of getting stuck.
+- The "Link your number" dialog shows a clear **"Generating your QR code…"**
+  state (instead of a bare spinner) so it never looks frozen, and polls without
+  overlapping requests.
+
 ## [0.35.0] — 2026-07-05
 
 **WAHA (self-hosted WhatsApp) as a provider** — connect numbers through a
