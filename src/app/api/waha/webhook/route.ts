@@ -43,6 +43,9 @@ interface MessagePayload {
   hasMedia?: boolean;
   /** WAHA message type: chat|image|video|audio|ptt|document|sticker|location… */
   type?: string;
+  /** message.ack: numeric level (-1 err, 1 server, 2 device, 3 read, 4 played). */
+  ack?: number;
+  ackName?: string;
   notifyName?: string;
   _data?: {
     notifyName?: string;
@@ -72,6 +75,25 @@ function resolveSenderAddress(p: MessagePayload): string {
   const alt = info.SenderAlt || info.ChatAlt || "";
   return typeof alt === "string" && alt.includes("@") ? alt : from;
 }
+
+// WAHA delivery ack → our message status (drives the ✓/✓✓/✓✓-blue ticks).
+function wahaAckToStatus(level: number | null, name?: string): string | null {
+  const n = (name ?? "").toUpperCase();
+  if (level === -1 || n === "ERROR") return "failed";
+  if ((level !== null && level >= 3) || n === "READ" || n === "PLAYED") return "read";
+  if (level === 2 || n === "DEVICE" || n === "DELIVERED") return "delivered";
+  if (level === 1 || n === "SERVER" || n === "SENT") return "sent";
+  return null; // pending / unknown → ignore
+}
+
+// Forward-only guard (mirrors the Meta webhook): each status may only overwrite
+// a valid predecessor, so out-of-order acks never regress a tick.
+const MESSAGE_STATUS_PREDECESSORS: Record<string, string[]> = {
+  sent: ["sending"],
+  delivered: ["sending", "sent"],
+  read: ["sending", "sent", "delivered"],
+  failed: ["sending", "sent"],
+};
 
 export async function POST(request: Request) {
   const raw = await request.text();
@@ -127,6 +149,25 @@ export async function POST(request: Request) {
           connected_at: connected ? new Date().toISOString() : null,
         })
         .eq("id", cfg.id);
+    }
+    return NextResponse.json({ received: true });
+  }
+
+  // Delivery/read receipt for an outbound message → advance its tick status.
+  if (body?.event === "message.ack") {
+    const p = body.payload ?? {};
+    const ackId = typeof p.id === "string" ? p.id : "";
+    const status = wahaAckToStatus(
+      typeof p.ack === "number" ? p.ack : null,
+      p.ackName,
+    );
+    const preds = status ? MESSAGE_STATUS_PREDECESSORS[status] : undefined;
+    if (ackId && status && preds) {
+      await admin
+        .from("messages")
+        .update({ status })
+        .eq("message_id", ackId)
+        .in("status", preds);
     }
     return NextResponse.json({ received: true });
   }

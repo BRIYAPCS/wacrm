@@ -9,6 +9,24 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.40.0] — 2026-07-05
+
+### Added
+
+- **WhatsApp-style delivery ticks for WAHA numbers.** WAHA sessions now receive
+  `message.ack` events, so an outbound message advances ✓ sent → ✓✓ delivered →
+  ✓✓ **blue** read (forward-only, so out-of-order receipts never regress a
+  tick) — matching how Meta numbers already behave. Self-hosters: existing WAHA
+  sessions pick this up on their next (re)provision; the tick UI was already
+  in place.
+
+### Changed
+
+- **Inbox list is less noisy / more WhatsApp-like.** An ordinary **Open** thread
+  no longer shows a status dot (which was easy to mistake for "unread"). Only
+  **Pending** (amber) and **Closed** (grey) show a dot; the unread indicator
+  remains the numbered badge that clears when you open the thread.
+
 ## [0.39.1] — 2026-07-05
 
 ### Fixed
