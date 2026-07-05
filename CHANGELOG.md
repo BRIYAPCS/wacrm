@@ -9,6 +9,16 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.34.1] — 2026-07-05
+
+### Fixed
+
+- The **Notifications page** now matches the header **bell**: it shows a
+  **New messages** section (conversations with unread inbound messages) in
+  addition to alerts (assignments, @mentions). Previously the bell counted a
+  new message but the Notifications page listed only alerts, so opening it
+  looked empty. The empty state now reads "You're all caught up."
+
 ## [0.34.0] — 2026-07-05
 
 **WhatsApp contact profiles** — pull a customer's photo + "about" so the
