@@ -63,7 +63,9 @@ export async function wahaSessionStatus(creds: WahaCreds): Promise<WahaStatus> {
 function sessionConfig(webhookUrl: string, hmacKey: string) {
   const webhook: Record<string, unknown> = {
     url: webhookUrl,
-    events: ["message", "session.status"],
+    // `message.ack` carries delivery/read receipts → drives the ✓/✓✓/✓✓-blue
+    // ticks on outbound bubbles, like WhatsApp.
+    events: ["message", "message.ack", "session.status"],
   };
   if (hmacKey) webhook.hmac = { key: hmacKey };
   return { webhooks: [webhook] };
