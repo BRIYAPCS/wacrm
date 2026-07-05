@@ -19,7 +19,11 @@
 
 import { NextResponse } from "next/server";
 
-import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import {
+  requireRole,
+  requireWithinLimit,
+  toErrorResponse,
+} from "@/lib/auth/account";
 import { clampExpiryDays, inviteExpiresAt } from "@/lib/auth/invitations";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isAccountRole } from "@/lib/auth/roles";
@@ -177,6 +181,27 @@ export async function POST(request: Request) {
       RATE_LIMITS.adminAction,
     );
     if (!limit.success) return rateLimitResponse(limit);
+
+    // Seat gate: existing members + still-pending invites must be under the
+    // plan's seat cap before we add another (block-new, never retroactive).
+    const [{ count: memberCount }, { count: pendingCount }] = await Promise.all([
+      ctx.supabase
+        .from("profiles")
+        .select("user_id", { count: "exact", head: true })
+        .eq("account_id", ctx.accountId),
+      ctx.supabase
+        .from("account_invitations")
+        .select("id", { count: "exact", head: true })
+        .eq("account_id", ctx.accountId)
+        .is("accepted_at", null)
+        .gt("expires_at", new Date().toISOString()),
+    ]);
+    requireWithinLimit(
+      ctx,
+      "seats",
+      (memberCount ?? 0) + (pendingCount ?? 0),
+      "team seats",
+    );
 
     const body = (await request.json().catch(() => null)) as
       | { email?: unknown; role?: unknown; name?: unknown; expiresInDays?: unknown }

@@ -35,6 +35,12 @@ import { hashApiKey, looksLikeApiKey } from '@/lib/api-keys/keys';
 import { hasScope, type ApiScope } from '@/lib/api-keys/scopes';
 import { forbidden, rateLimited, unauthorized } from '@/lib/api/v1/respond';
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
+import {
+  effectiveTier,
+  parseOverrides,
+  resolveEntitlements,
+  type Entitlements,
+} from '@/lib/plans/entitlements';
 
 export interface ApiKeyContext {
   /** Discriminant — lets shared logic tell key auth from cookie auth. */
@@ -49,6 +55,8 @@ export interface ApiKeyContext {
   scopes: string[];
   /** Who minted the key (null if that user was later removed). */
   createdBy: string | null;
+  /** Resolved plan entitlements for the key's account (for limit checks). */
+  entitlements: Entitlements;
 }
 
 /**
@@ -105,14 +113,37 @@ export async function requireApiKey(
     throw forbidden(`This API key is missing the '${scope}' scope`);
   }
 
+  // Plan gate: the entire public API is a paid-tier feature. Resolve the
+  // key's account entitlements (service-role read — no user session) and
+  // reject when the plan doesn't include it. This is the machine-side
+  // counterpart of the dashboard's requireFeature and closes what would
+  // otherwise be a backdoor around every UI gate.
+  const admin = supabaseAdmin();
+  const { data: acct } = await admin
+    .from('accounts')
+    .select('plan, plan_overrides')
+    .eq('id', row.account_id)
+    .maybeSingle();
+  const entitlements = resolveEntitlements(
+    effectiveTier(
+      (acct as { plan?: string | null } | null)?.plan ?? null,
+      process.env.NEXT_PUBLIC_DEFAULT_PLAN ?? null,
+    ),
+    parseOverrides((acct as { plan_overrides?: unknown } | null)?.plan_overrides),
+  );
+  if (!entitlements.features.has('public_api')) {
+    throw forbidden('Your plan does not include public API access. Upgrade to use the REST API.');
+  }
+
   touchLastUsed(row.id);
 
   return {
     authType: 'api_key',
-    supabase: supabaseAdmin(),
+    supabase: admin,
     accountId: row.account_id,
     keyId: row.id,
     scopes: row.scopes,
     createdBy: row.created_by,
+    entitlements,
   };
 }

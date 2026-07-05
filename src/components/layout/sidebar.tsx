@@ -14,6 +14,7 @@ import {
   Crown,
   GitBranch,
   LayoutDashboard,
+  Lock,
   LogOut,
   MessageSquare,
   Radio,
@@ -28,6 +29,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
+import type { FeatureKey } from "@/lib/plans/catalog";
 
 // Per-role chip metadata used in the sidebar's account strip + the
 // Members tab roster. Keeping this near both consumers in a single
@@ -88,6 +90,12 @@ interface NavItem {
    * Purely informational — doesn't affect routing or access.
    */
   beta?: boolean;
+  /**
+   * When set, the row is gated behind this plan feature: if the account's
+   * plan doesn't include it, the row renders locked (a lock icon linking to
+   * billing) instead of a live link. Cosmetic — the server still enforces.
+   */
+  feature?: FeatureKey;
 }
 
 const navItems: NavItem[] = [
@@ -98,9 +106,9 @@ const navItems: NavItem[] = [
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/pipelines", label: "Pipelines", icon: GitBranch },
   { href: "/broadcasts", label: "Broadcasts", icon: Radio },
-  { href: "/automations", label: "Automations", icon: Zap },
-  { href: "/flows", label: "Flows", icon: Workflow, beta: true },
-  { href: "/agents", label: "AI Agents", icon: Bot },
+  { href: "/automations", label: "Automations", icon: Zap, feature: "automations" },
+  { href: "/flows", label: "Flows", icon: Workflow, beta: true, feature: "flows" },
+  { href: "/agents", label: "AI Agents", icon: Bot, feature: "ai" },
 ];
 
 const bottomNavItems = [
@@ -115,7 +123,8 @@ interface SidebarProps {
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { profile, profileLoading, account, accountRole, signOut } = useAuth();
+  const { profile, profileLoading, account, accountRole, signOut, hasFeature } =
+    useAuth();
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
   // Only surface the account-name strip when it actually carries
@@ -211,6 +220,25 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/dashboard" && pathname.startsWith(item.href));
+
+              // Plan-gated module the account doesn't have → render locked
+              // (links to billing) rather than a live nav row.
+              const locked = !!item.feature && !hasFeature(item.feature);
+              if (locked) {
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href="/settings?tab=billing"
+                      title={`${item.label} — upgrade your plan to unlock`}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground/50 transition-colors hover:bg-muted hover:text-muted-foreground lg:py-2"
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span className="flex-1">{item.label}</span>
+                      <Lock className="h-3.5 w-3.5" aria-label="Locked — upgrade to unlock" />
+                    </Link>
+                  </li>
+                );
+              }
 
               const showUnreadDot =
                 item.href === "/inbox" && totalUnread > 0 && !isActive;
