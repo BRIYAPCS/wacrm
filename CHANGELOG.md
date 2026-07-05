@@ -9,6 +9,23 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.46.0] — 2026-07-05
+
+### Added
+
+- **Action history in the thread.** Assignments, transfers, and status changes
+  now appear as inline system lines right where they happened — "Ana
+  transferred this to Beto", "Beto marked this closed" — so a conversation
+  handled by several agents carries its own audit trail. Merged into the
+  timeline by time, between the messages.
+
+  **Migration required:** apply `supabase/migrations/060_conversation_events.sql`
+  (new `conversation_events` table, RLS-scoped to account members).
+
+  Note: events appear immediately for the agent who made the change and on
+  reload for others (cross-agent live streaming of the history is a follow-up;
+  the assignment/status itself already updates live).
+
 ## [0.45.0] — 2026-07-05
 
 ### Added

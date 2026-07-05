@@ -246,6 +246,26 @@ export interface Message {
   interactive_reply_id?: string;
 }
 
+/**
+ * An inline action-history entry shown between messages in a thread —
+ * assignments, transfers, and status changes. Persisted in
+ * `conversation_events` (migration 060).
+ */
+export interface ConversationEvent {
+  id: string;
+  conversation_id: string;
+  account_id: string;
+  event_type: 'assigned' | 'unassigned' | 'status_changed';
+  /** The agent (auth user id) who performed the action. */
+  actor_id?: string | null;
+  meta?: {
+    to_agent_id?: string | null;
+    from_agent_id?: string | null;
+    to_status?: string;
+  } | null;
+  created_at: string;
+}
+
 export type ReactionActor = 'customer' | 'agent';
 
 export interface MessageReaction {
