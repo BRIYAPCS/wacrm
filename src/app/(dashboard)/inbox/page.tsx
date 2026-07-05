@@ -231,7 +231,17 @@ export default function InboxPage() {
                   (m) => !(m.id.startsWith("temp-") && m.status !== "failed"),
                 )
               : prev;
-            return [...cleaned, newMsg];
+            // Keep the thread ordered by time — realtime can deliver out of
+            // order, and an optimistic temp's client clock may differ from the
+            // server's, which would otherwise render bubbles (and date
+            // separators) in the wrong sequence.
+            const next = [...cleaned, newMsg];
+            next.sort(
+              (a, b) =>
+                new Date(a.created_at).getTime() -
+                new Date(b.created_at).getTime(),
+            );
+            return next;
           });
         }
 
@@ -248,10 +258,15 @@ export default function InboxPage() {
                     ...c,
                     last_message_text: newMsg.content_text ?? "",
                     last_message_at: newMsg.created_at,
+                    // Only a CUSTOMER (inbound) message bumps unread — mirrors
+                    // the server's bump_conversation_on_inbound. Counting our
+                    // own agent/bot sends produced a phantom +1 badge.
                     unread_count:
                       activeConversation?.id === newMsg.conversation_id
                         ? 0
-                        : c.unread_count + 1,
+                        : newMsg.sender_type === "customer"
+                          ? c.unread_count + 1
+                          : c.unread_count,
                   }
                 : c,
             ),

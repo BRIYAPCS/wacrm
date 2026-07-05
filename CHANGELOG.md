@@ -9,6 +9,25 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.38.1] — 2026-07-05
+
+### Fixed (inbox correctness)
+
+- **Notification bell no longer drifts.** Both bell counters (new messages +
+  alerts) now reconcile against the server on realtime reconnect and on tab
+  re-focus, so a dropped/duplicate realtime event can't leave the badge
+  permanently wrong.
+- **Status/Assign are read-only for viewers** — the header dropdowns are
+  disabled for the viewer role (they could previously trigger a rejected write),
+  and a failed status change no longer flips the UI optimistically.
+- **24-hour session window is accurate** — it now ticks with real time (a thread
+  left open across the boundary updates), uses millisecond precision (was off by
+  up to ~1h), and a thread with no inbound customer message correctly shows as
+  template-only instead of enabling free-text.
+- **Unread badge no longer phantom-counts** your own agent/bot sends to a
+  non-active conversation.
+- **Messages stay in time order** even when realtime delivers them out of order.
+
 ## [0.38.0] — 2026-07-05
 
 **Server-side plan enforcement.** Subscription tiers are now enforced on the

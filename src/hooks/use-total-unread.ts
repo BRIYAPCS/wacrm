@@ -31,9 +31,11 @@ export function useTotalUnread(): number {
     const supabase = createClient();
     let cancelled = false;
 
-    // Initial load. RLS scopes this to the signed-in user automatically —
-    // no explicit user_id filter needed here.
-    (async () => {
+    // Full reconcile against the server. RLS scopes this to the signed-in
+    // user automatically. Called on mount, on realtime re-subscribe, and on
+    // tab re-focus — because realtime is best-effort (sleep/tab-throttle/WS
+    // blip), so a dropped event would otherwise leave the badge wrong forever.
+    const load = async () => {
       const { data, error } = await supabase
         .from("conversations")
         .select("id, unread_count");
@@ -48,8 +50,10 @@ export function useTotalUnread(): number {
       }
       countsRef.current = map;
       setTotal(sum);
-    })();
+    };
+    load();
 
+    let subscribedOnce = false;
     const channel = supabase
       .channel(`total-unread-realtime-${++channelSeq}`)
       .on(
@@ -70,10 +74,22 @@ export function useTotalUnread(): number {
           setTotal(sum);
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          // Any (re)subscribe after the first is a reconnect → reconcile.
+          if (subscribedOnce) load();
+          subscribedOnce = true;
+        }
+      });
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
       supabase.removeChannel(channel);
     };
   }, []);
