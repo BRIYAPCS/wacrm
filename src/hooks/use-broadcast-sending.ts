@@ -161,7 +161,12 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     let contacts: Contact[] = [];
 
     if (audience.type === 'all') {
-      const { data, error } = await supabase.from('contacts').select('*');
+      // Groups are inbox-only — never broadcast targets (their JID isn't a
+      // sendable number anyway).
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('is_group', false);
       if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
       contacts = data ?? [];
     } else if (
@@ -644,10 +649,11 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       for (const id of baseIds) if (!excludeSet.has(id)) n += 1;
       return n;
     }
-    // "all" — total minus the excluded set.
+    // "all" — total minus the excluded set (groups excluded, as on send).
     const { count } = await supabase
       .from('contacts')
-      .select('*', { count: 'exact', head: true });
+      .select('*', { count: 'exact', head: true })
+      .eq('is_group', false);
     const total = count ?? 0;
     return excludeSet ? Math.max(0, total - excludeSet.size) : total;
   }

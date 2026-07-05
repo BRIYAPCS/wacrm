@@ -100,6 +100,10 @@ export interface Contact {
   avatar_url?: string;
   /** The contact's WhatsApp "about"/status (wsapi.chat only). */
   about?: string;
+  /** True when this "contact" is a WhatsApp group — `phone` holds the group
+   *  JID (…@g.us) and `name` the group subject. Groups are inbox-only and are
+   *  excluded from the contacts list, dedupe, and broadcasts. */
+  is_group?: boolean;
   created_at: string;
   updated_at: string;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
@@ -223,6 +227,10 @@ export interface Message {
   status: MessageStatus;
   created_at: string;
   reply_to_message_id?: string;
+  /** Group chats only: the participant who sent an inbound message, so the
+   *  bubble can be attributed. Null on 1:1 threads and on outbound messages. */
+  sender_phone?: string;
+  sender_name?: string;
   /**
    * Only set when `content_type === 'interactive'` — the stable id of
    * the button or list row the customer tapped. The Flows engine uses

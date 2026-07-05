@@ -168,6 +168,8 @@ export default function ContactsPage() {
       let query = supabase
         .from('contacts')
         .select('*', { count: 'exact' })
+        // Groups live in the inbox only — never list them as contacts.
+        .eq('is_group', false)
         .order('created_at', { ascending: false })
         .range(from, to);
 

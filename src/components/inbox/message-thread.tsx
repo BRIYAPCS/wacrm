@@ -27,6 +27,7 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Wallpaper,
+  Users,
 } from "lucide-react";
 import { format, isToday, isYesterday } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -891,7 +892,10 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const isGroup = contact.is_group === true || contact.phone.endsWith("@g.us");
+  const displayName = isGroup
+    ? contact.name || "Group chat"
+    : contact.name || contact.phone;
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
@@ -939,6 +943,8 @@ export function MessageThread({
                 alt={displayName}
                 className="h-9 w-9 rounded-full object-cover"
               />
+            ) : isGroup ? (
+              <Users className="h-4 w-4" />
             ) : (
               displayName.charAt(0).toUpperCase()
             )}
@@ -946,7 +952,9 @@ export function MessageThread({
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
             <div className="flex items-center gap-1.5">
-              <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {isGroup ? "Group chat" : contact.phone}
+              </p>
               <ConversationNumberBadge
                 configId={conversation.whatsapp_config_id ?? null}
               />
@@ -1207,6 +1215,7 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
+                          isGroup={isGroup}
                         />
                       </MessageActions>
                     );
@@ -1228,6 +1237,7 @@ export function MessageThread({
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
+        isGroup={isGroup}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onOpenTemplates={handleOpenTemplates}

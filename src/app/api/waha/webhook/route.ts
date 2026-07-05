@@ -18,6 +18,7 @@ import crypto from "node:crypto";
 
 import { ingestInboundMessage, inboundMediaMarker } from "@/lib/whatsapp/ingest-inbound";
 import { enrichContactFromWaha } from "@/lib/waha/profile";
+import { enrichGroupFromWaha } from "@/lib/waha/group";
 import { chatIdToPhone, wahaBaseUrl, wahaWebhookHmacKey } from "@/lib/waha/config";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -44,6 +45,8 @@ interface MessagePayload {
   timestamp?: number;
   from?: string;
   fromMe?: boolean;
+  /** Group message: the participant JID who actually sent it. */
+  participant?: string;
   body?: string;
   hasMedia?: boolean;
   /** WAHA message type: chat|image|video|audio|ptt|document|sticker|location… */
@@ -75,6 +78,17 @@ interface MessagePayload {
  * in `_data.Info.SenderAlt` (an `@s.whatsapp.net` jid). Fall back to `from`
  * when it's already a phone-style address (or when no alt is present).
  */
+/**
+ * In a group, `from` is the group JID and the real sender is a participant.
+ * Prefer `_data.Info.SenderAlt` (the real number when LID-addressed), then
+ * `Info.Sender`, then the top-level `participant`.
+ */
+function resolveGroupParticipant(p: MessagePayload): string {
+  const info = p._data?.Info ?? {};
+  const jid = info.SenderAlt || info.Sender || p.participant || "";
+  return typeof jid === "string" ? jid : "";
+}
+
 function resolveSenderAddress(p: MessagePayload): string {
   const from = p.from ?? "";
   if (!from.endsWith("@lid")) return from;
@@ -210,28 +224,72 @@ export async function POST(request: Request) {
   // caption, when present, is used as-is.
   const effectiveText = text || inboundMediaMarker(p.type, p.hasMedia) || "";
 
-  // Ignore our own echoes, group chats, status/channel broadcasts, and
-  // truly-empty/no-sender events.
-  if (p.fromMe || !from || isGroup || isNonChat || !effectiveText) {
+  // Ignore our own echoes, status/channel broadcasts, and truly-empty/
+  // no-sender events. Group chats (@g.us) ARE ingested — see below.
+  if (p.fromMe || !from || isNonChat || !effectiveText) {
     return NextResponse.json({ received: true, ignored: "not-an-inbound-message" });
   }
 
   try {
-    // Resolve the real phone (handles WhatsApp LID addressing — see helper).
+    const creds = {
+      baseUrl: wahaBaseUrl(cfg.base_url),
+      apiKey: decrypt(cfg.access_token),
+      session,
+    };
+    const messageId = p.id || `waha-${Date.now()}`;
+    const timestampSec =
+      typeof p.timestamp === "number" ? p.timestamp : Math.floor(Date.now() / 1000);
+
+    if (isGroup) {
+      // `from` is the group JID; the real sender is a participant.
+      const participant = resolveGroupParticipant(p);
+      if (!participant || participant.endsWith("@lid")) {
+        console.warn(`[waha webhook] unresolved group participant in ${from}; skipping`);
+        return NextResponse.json({ received: true, ignored: "unresolved-group-participant" });
+      }
+      const senderPhone = chatIdToPhone(participant);
+      const senderName =
+        p.notifyName ??
+        p._data?.notifyName ??
+        p._data?.pushName ??
+        p._data?.notify ??
+        senderPhone;
+
+      const result = await ingestInboundMessage({
+        accountId: cfg.account_id,
+        ownerUserId: cfg.user_id,
+        configId: cfg.id,
+        phone: from, // the group JID
+        name: "", // subject filled in by enrichment on first sight
+        text: effectiveText,
+        messageId,
+        timestampSec,
+        isGroup: true,
+        senderPhone,
+        senderName,
+      });
+
+      // Fetch the group's real subject once, when it's first seen.
+      if (result?.contactId && result.contactCreated) {
+        after(() => enrichGroupFromWaha(admin, creds, result.contactId, from));
+      }
+      return NextResponse.json({
+        received: true,
+        conversationId: result?.conversationId ?? null,
+      });
+    }
+
+    // Direct 1:1 message. Resolve the real phone (handles LID addressing).
     const senderAddress = resolveSenderAddress(p);
-    // Never fabricate a phone from an unresolved LID: if we couldn't map the
-    // `@lid` to a real @s.whatsapp.net/@c.us number, dropping the digits would
+    // Never fabricate a phone from an unresolved LID: dropping the digits would
     // create a bogus contact and send replies to a number that doesn't exist.
-    // Ack and skip instead.
     if (senderAddress.endsWith("@lid")) {
       console.warn(`[waha webhook] unresolved LID ${from} — no SenderAlt; skipping`);
       return NextResponse.json({ received: true, ignored: "unresolved-lid" });
     }
     const phone = chatIdToPhone(senderAddress);
     if (from.endsWith("@lid")) {
-      console.log(
-        `[waha webhook] LID ${from} -> ${senderAddress} (${phone})`,
-      );
+      console.log(`[waha webhook] LID ${from} -> ${senderAddress} (${phone})`);
     }
     const name =
       p.notifyName ?? p._data?.notifyName ?? p._data?.pushName ?? p._data?.notify ?? "";
@@ -242,18 +300,12 @@ export async function POST(request: Request) {
       phone,
       name,
       text: effectiveText,
-      messageId: p.id || `waha-${Date.now()}`,
-      timestampSec:
-        typeof p.timestamp === "number" ? p.timestamp : Math.floor(Date.now() / 1000),
+      messageId,
+      timestampSec,
     });
 
     // Enrich the contact's WhatsApp profile after responding — best-effort.
     if (result?.contactId) {
-      const creds = {
-        baseUrl: wahaBaseUrl(cfg.base_url),
-        apiKey: decrypt(cfg.access_token),
-        session,
-      };
       after(() => enrichContactFromWaha(admin, creds, result.contactId, phone));
     }
 

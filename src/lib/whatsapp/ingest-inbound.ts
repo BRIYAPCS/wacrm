@@ -51,52 +51,116 @@ export interface InboundMessage {
   ownerUserId: string;
   /** whatsapp_config.id of the number that received the message. */
   configId: string;
-  phone: string; // "+1240..."
+  /** Direct: the sender's phone ("+1240…"). Group: the group JID ("…@g.us"). */
+  phone: string;
+  /** Direct: the sender's name. Group: the group subject. */
   name: string;
   text: string;
   messageId: string;
   timestampSec: number;
+  /** True when `phone` is a group JID — routes to a group conversation. */
+  isGroup?: boolean;
+  /** Group only: the participant who sent this message (phone + display name). */
+  senderPhone?: string;
+  senderName?: string;
 }
 
-/** Returns { conversationId, contactId } on success, or null if it couldn't ingest. */
+/** Returns { conversationId, contactId, contactCreated } on success, or null. */
 export async function ingestInboundMessage(
   msg: InboundMessage,
-): Promise<{ conversationId: string; contactId: string } | null> {
+): Promise<{
+  conversationId: string;
+  contactId: string;
+  contactCreated: boolean;
+} | null> {
   const admin = supabaseAdmin();
 
   // --- contact ---
   let contactId: string;
-  const existing = await findExistingContact(admin, msg.accountId, msg.phone);
-  if (existing) {
-    contactId = existing.id;
-    if (msg.name && msg.name !== existing.name) {
-      await admin
-        .from("contacts")
-        .update({ name: msg.name, updated_at: new Date().toISOString() })
-        .eq("id", existing.id);
-    }
-  } else {
-    const { data: created, error } = await admin
+  let contactCreated = false;
+
+  if (msg.isGroup) {
+    // A group is a contact keyed by its JID and flagged is_group. It bypasses
+    // the phone-dedupe path entirely (a group JID is not a person's number).
+    const { data: g } = await admin
       .from("contacts")
-      .insert({
-        account_id: msg.accountId,
-        user_id: msg.ownerUserId,
-        phone: msg.phone,
-        name: msg.name || msg.phone,
-      })
-      .select("id")
-      .single();
-    if (error || !created) {
-      if (isUniqueViolation(error)) {
-        const raced = await findExistingContact(admin, msg.accountId, msg.phone);
-        if (!raced) return null;
-        contactId = raced.id;
-      } else {
-        console.error("[inbound] contact insert failed:", error);
-        return null;
+      .select("id, name")
+      .eq("account_id", msg.accountId)
+      .eq("phone", msg.phone)
+      .eq("is_group", true)
+      .maybeSingle();
+    if (g) {
+      contactId = g.id;
+      if (msg.name && msg.name !== g.name) {
+        await admin
+          .from("contacts")
+          .update({ name: msg.name, updated_at: new Date().toISOString() })
+          .eq("id", g.id);
       }
     } else {
-      contactId = created.id;
+      const { data: created, error } = await admin
+        .from("contacts")
+        .insert({
+          account_id: msg.accountId,
+          user_id: msg.ownerUserId,
+          phone: msg.phone,
+          name: msg.name || "Group chat",
+          is_group: true,
+        })
+        .select("id")
+        .single();
+      if (error || !created) {
+        const { data: raced } = await admin
+          .from("contacts")
+          .select("id")
+          .eq("account_id", msg.accountId)
+          .eq("phone", msg.phone)
+          .eq("is_group", true)
+          .maybeSingle();
+        if (!raced) {
+          console.error("[inbound] group contact insert failed:", error);
+          return null;
+        }
+        contactId = raced.id;
+      } else {
+        contactId = created.id;
+        contactCreated = true;
+      }
+    }
+  } else {
+    const existing = await findExistingContact(admin, msg.accountId, msg.phone);
+    if (existing) {
+      contactId = existing.id;
+      if (msg.name && msg.name !== existing.name) {
+        await admin
+          .from("contacts")
+          .update({ name: msg.name, updated_at: new Date().toISOString() })
+          .eq("id", existing.id);
+      }
+    } else {
+      const { data: created, error } = await admin
+        .from("contacts")
+        .insert({
+          account_id: msg.accountId,
+          user_id: msg.ownerUserId,
+          phone: msg.phone,
+          name: msg.name || msg.phone,
+        })
+        .select("id")
+        .single();
+      if (error || !created) {
+        if (isUniqueViolation(error)) {
+          const raced = await findExistingContact(admin, msg.accountId, msg.phone);
+          if (!raced) return null;
+          contactId = raced.id;
+        } else {
+          console.error("[inbound] contact insert failed:", error);
+          return null;
+        }
+      } else {
+        contactId = created.id;
+        contactCreated = true;
+      }
     }
   }
 
@@ -152,19 +216,29 @@ export async function ingestInboundMessage(
     content_text: msg.text,
     message_id: msg.messageId,
     status: "delivered",
+    // Group only: attribute the bubble to the participant who sent it.
+    sender_phone: msg.isGroup ? msg.senderPhone ?? null : null,
+    sender_name: msg.isGroup ? msg.senderName ?? null : null,
     created_at: new Date(msg.timestampSec * 1000).toISOString(),
   });
   if (msgErr) {
-    if (isUniqueViolation(msgErr)) return { conversationId, contactId }; // dedupe
+    if (isUniqueViolation(msgErr))
+      return { conversationId, contactId, contactCreated }; // dedupe
     console.error("[inbound] message insert failed:", msgErr);
     return null;
   }
 
+  // In a group, prefix the list preview with who spoke ("Alice: hi") so the
+  // conversation row is legible without opening it.
+  const preview =
+    msg.isGroup && msg.senderName
+      ? `${msg.senderName}: ${msg.text || "[message]"}`
+      : msg.text || "[message]";
   await admin.rpc("bump_conversation_on_inbound", {
     p_conversation_id: conversationId,
-    p_last_text: msg.text || "[message]",
+    p_last_text: preview,
     p_last_at: new Date(msg.timestampSec * 1000).toISOString(),
   });
 
-  return { conversationId, contactId };
+  return { conversationId, contactId, contactCreated };
 }

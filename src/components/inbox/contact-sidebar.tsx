@@ -18,6 +18,7 @@ import {
   Loader2,
   Sparkles,
   RefreshCw,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -315,7 +316,10 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const isGroup = contact.is_group === true || contact.phone.endsWith("@g.us");
+  const displayName = isGroup
+    ? contact.name || "Group chat"
+    : contact.name || contact.phone;
   const initials = displayName.charAt(0).toUpperCase();
   const usingOverride = profileOverride?.id === contact.id;
   const avatarUrl = (usingOverride ? profileOverride?.avatar_url : null) ?? contact.avatar_url;
@@ -465,20 +469,27 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
             </div>
           )}
 
-          {/* Phone */}
+          {/* Phone (or a group indicator — a group has a JID, not a number) */}
           <div className="mt-4 space-y-2">
-            <button
-              onClick={handleCopyPhone}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
-            >
-              <Phone className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 text-left">{contact.phone}</span>
-              {copied ? (
-                <Check className="h-3 w-3 text-primary" />
-              ) : (
-                <Copy className="h-3 w-3 text-muted-foreground" />
-              )}
-            </button>
+            {isGroup ? (
+              <div className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="flex-1 text-left">Group chat</span>
+              </div>
+            ) : (
+              <button
+                onClick={handleCopyPhone}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              >
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <span className="flex-1 text-left">{contact.phone}</span>
+                {copied ? (
+                  <Check className="h-3 w-3 text-primary" />
+                ) : (
+                  <Copy className="h-3 w-3 text-muted-foreground" />
+                )}
+              </button>
+            )}
 
             {contact.email && (
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">

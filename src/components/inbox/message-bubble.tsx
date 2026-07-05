@@ -25,6 +25,8 @@ interface MessageBubbleProps {
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  /** Group thread: show the sender's name above inbound bubbles. */
+  isGroup?: boolean;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -248,9 +250,15 @@ export function MessageBubble({
   reactions,
   currentUserId,
   onToggleReaction,
+  isGroup,
 }: MessageBubbleProps) {
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");
+  // In a group, attribute each inbound bubble to the participant who sent it.
+  const senderLabel =
+    isGroup && !isAgent
+      ? message.sender_name || message.sender_phone || null
+      : null;
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
   // group matches the bubble's content area, not the full row.
@@ -269,6 +277,11 @@ export function MessageBubble({
             : "rounded-bl-md bg-muted text-foreground",
         )}
       >
+        {senderLabel && (
+          <p className="mb-0.5 text-xs font-semibold text-primary">
+            {senderLabel}
+          </p>
+        )}
         {reply && (
           <ReplyQuote
             authorLabel={reply.authorLabel}
