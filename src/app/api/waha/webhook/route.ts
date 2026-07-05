@@ -42,7 +42,33 @@ interface MessagePayload {
   body?: string;
   hasMedia?: boolean;
   notifyName?: string;
-  _data?: { notifyName?: string; pushName?: string; notify?: string };
+  _data?: {
+    notifyName?: string;
+    pushName?: string;
+    notify?: string;
+    // GOWS raw message info — carries the real phone when WhatsApp addresses
+    // the message by LID (privacy identifier) instead of the number.
+    Info?: {
+      SenderAlt?: string;
+      ChatAlt?: string;
+      Sender?: string;
+      Chat?: string;
+    };
+  };
+}
+
+/**
+ * The sender's real phone address. Newer WhatsApp addresses messages by a LID
+ * (`<id>@lid`) rather than the phone; in that case the real number is carried
+ * in `_data.Info.SenderAlt` (an `@s.whatsapp.net` jid). Fall back to `from`
+ * when it's already a phone-style address (or when no alt is present).
+ */
+function resolveSenderAddress(p: MessagePayload): string {
+  const from = p.from ?? "";
+  if (!from.endsWith("@lid")) return from;
+  const info = p._data?.Info ?? {};
+  const alt = info.SenderAlt || info.ChatAlt || "";
+  return typeof alt === "string" && alt.includes("@") ? alt : from;
 }
 
 export async function POST(request: Request) {
@@ -118,7 +144,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const phone = chatIdToPhone(from);
+    // Resolve the real phone (handles WhatsApp LID addressing — see helper).
+    const senderAddress = resolveSenderAddress(p);
+    const phone = chatIdToPhone(senderAddress);
+    if (from.endsWith("@lid")) {
+      console.log(
+        `[waha webhook] LID ${from} -> ${senderAddress} (${phone})`,
+      );
+    }
     const name =
       p.notifyName ?? p._data?.notifyName ?? p._data?.pushName ?? p._data?.notify ?? "";
     const result = await ingestInboundMessage({

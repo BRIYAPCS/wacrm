@@ -9,6 +9,18 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.37.1] — 2026-07-05
+
+### Fixed
+
+- **WAHA inbound: resolve WhatsApp LID addressing.** Newer WhatsApp addresses
+  messages by an opaque LID (`<id>@lid`) instead of the phone number. The WAHA
+  webhook was reading that LID as the phone, so the contact showed a garbled
+  number (e.g. `+135807050473523`) and replies failed (they were sent to a
+  number that doesn't exist). It now uses `_data.Info.SenderAlt` — the real
+  `@s.whatsapp.net` number — when the message is LID-addressed, so contacts and
+  outbound replies work.
+
 ## [0.37.0] — 2026-07-05
 
 ### Added
