@@ -21,10 +21,45 @@ key) is **platform infrastructure** shared by every session and configured via
 env — never stored per-tenant. Only each session's name lives in the
 `whatsapp_config` row.
 
+## Deployment models — one server or many?
+
+A WAHA server holds **multiple sessions** (one per connected number), so you do
+**not** need a VM per client. Two shapes:
+
+- **Central server (recommended for reselling).** One WAHA VM serves every
+  client. Each client is an account in one shared wacrm app; their numbers are
+  just sessions on the shared WAHA host. Cheapest to run and one place to watch.
+  Scale by giving the VM more RAM or adding a second WAHA server later (a number
+  can carry its own `base_url`, so servers can coexist). A ~2 GB VM comfortably
+  holds a couple dozen GOWS sessions; size up from there.
+- **Isolated per-client deployment.** A separate wacrm app + database per client
+  (e.g. you sell a fully standalone instance). Each deployment points its
+  `WAHA_*` env at a WAHA server — either the shared central one or a VM dedicated
+  to that client for hard isolation.
+
+Either way, **connecting a deployment to a WAHA VM is just four env vars**
+(below). Adding a *new client* on a central server is even simpler: no server
+work at all — create their account in `/superadmin`, provision numbers, done.
+
+### Spin up a new WAHA VM in one command
+
+On a fresh Ubuntu VM (Linode/DO/EC2), as root:
+
+```bash
+bash scripts/setup-waha-server.sh
+```
+
+It installs Docker, runs WAHA (GOWS) with a freshly generated key, writes a
+`/root/waha/run.sh` recreate script, and **prints the four env vars** to paste
+into that deployment's `.env`. Then set `WAHA_WEBHOOK_URL` to the app's public
+URL and you're connected.
+
 ## 1. Run the WAHA server
 
 Any Docker host works (a small 2 GB VPS is plenty for the GOWS engine). GOWS is
-free in WAHA **Core** and supports multiple sessions.
+free in WAHA **Core** and supports multiple sessions. The
+[`scripts/setup-waha-server.sh`](../scripts/setup-waha-server.sh) one-liner above
+does all of this for you; the manual equivalent:
 
 Generate an API key and store only its **sha512** on the server, so the
 plaintext lives only in the app's env:
@@ -83,6 +118,20 @@ npm run db:deploy   # applies 055_whatsapp_waha.sql
 3. The tenant opens **Settings → WhatsApp → Link your number** and scans the QR
    with WhatsApp → *Linked devices → Link a device*. Status flips to
    **Connected** once paired (the app also gets a live `session.status` webhook).
+
+## Where to watch connections
+
+- **wacrm `/superadmin` → account → WhatsApp** — your cross-account control
+  plane. Lists every number and its status across all clients, provider-blind.
+  This is the place to run day-to-day; it works the same no matter how many WAHA
+  servers sit behind it.
+- **WAHA dashboard** (`http://<waha-host>:3000/dashboard`) — WAHA's own per-server
+  console for a live view of sessions/QRs. It authenticates with the server's
+  API key: open it, edit the worker, and paste the **plaintext** `WAHA_API_KEY`;
+  it then shows the sessions. It's **per-server** and WAHA-branded, so treat its
+  URL/credentials as operator-only — never share it with clients (it would reveal
+  the provider). Disable it with `-e WAHA_DASHBOARD_ENABLED=false` if you don't
+  want it exposed at all.
 
 ## Capabilities & limits
 
