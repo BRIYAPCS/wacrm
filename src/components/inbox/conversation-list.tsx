@@ -10,6 +10,8 @@ import {
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import { Search, ChevronDown, X, Users } from "lucide-react";
+import { NewChatDialog } from "./new-chat-dialog";
+import { SyncChatsButton } from "./sync-chats-button";
 import { formatDistanceToNow } from "date-fns";
 import { Input } from "@/components/ui/input";
 import {
@@ -257,6 +259,11 @@ export function ConversationList({
     <div className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80">
       {/* Search + Filter */}
       <div className="space-y-2 border-b border-border p-3">
+        {/* Actions: start a new chat / import existing chats */}
+        <div className="flex items-center justify-between gap-1">
+          <NewChatDialog onCreated={onSelect} />
+          <SyncChatsButton />
+        </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input

@@ -9,6 +9,27 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.47.0] — 2026-07-05
+
+### Added
+
+- **Import existing chats + history** from the connected WhatsApp number
+  (WAHA). A **Sync chats** button in the inbox (admin/owner) pulls every chat
+  and its full message history into the inbox — contacts, conversations, and
+  messages — running in the background so conversations fill in live via
+  realtime as they import. Messages you'd sent from the phone directly come in
+  as your outbound replies.
+- **Mirror phone-sent messages, live.** Messages sent from the phone/WhatsApp
+  app directly (not through this CRM) now appear in the thread as outbound,
+  deduped against the app's own sends so nothing double-posts. The inbox now
+  matches the phone end-to-end.
+- **New chat to any number.** A **New chat** button in the inbox lets you
+  message any WhatsApp number — it's saved as a contact if it isn't one
+  already, then opens the thread. Uses the country-code phone picker.
+
+  No migration required (reuses existing tables). WAHA-only — Meta/Twilio don't
+  expose the phone's existing history.
+
 ## [0.46.0] — 2026-07-05
 
 ### Added

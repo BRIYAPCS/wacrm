@@ -118,3 +118,90 @@ export function wahaSendImage(
     caption,
   });
 }
+
+// ============================================================
+// History sync — list the account's existing chats + fetch a chat's messages.
+// Live-verified shapes against the GOWS server.
+//   GET /api/{session}/chats/overview?limit=N        → WahaChatOverview[]
+//   GET /api/{session}/chats/{chatId}/messages?...   → WahaHistoryMessage[]
+// ============================================================
+
+/** A message as returned by the chats/messages endpoints — same shape the
+ *  webhook receives, so the ingest/sync paths can share resolution logic. */
+export interface WahaHistoryMessage {
+  id?: string;
+  timestamp?: number;
+  from?: string;
+  to?: string | null;
+  fromMe?: boolean;
+  body?: string;
+  hasMedia?: boolean;
+  type?: string | null;
+  ack?: number;
+  ackName?: string;
+  _data?: {
+    Info?: {
+      Chat?: string;
+      Sender?: string;
+      SenderAlt?: string;
+      RecipientAlt?: string;
+      IsFromMe?: boolean;
+      IsGroup?: boolean;
+      ID?: string;
+      Type?: string;
+      MediaType?: string;
+      PushName?: string;
+    };
+    notifyName?: string;
+    pushName?: string;
+    notify?: string;
+  };
+  notifyName?: string;
+}
+
+export interface WahaChatOverview {
+  id: string;
+  name?: string | null;
+  picture?: string | null;
+  lastMessage?: WahaHistoryMessage | null;
+}
+
+const enc = encodeURIComponent;
+
+async function getArray<T>(creds: WahaCreds, path: string): Promise<T[]> {
+  const res = await wahaRequest(creds, "GET", path);
+  const text = await res.text();
+  if (!res.ok) {
+    throw new WahaError(`WAHA ${path}: HTTP ${res.status}`, res.status);
+  }
+  try {
+    const j = JSON.parse(text);
+    return Array.isArray(j) ? (j as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** List the connected number's chats (contacts + groups), newest first. */
+export function wahaListChats(
+  creds: WahaCreds,
+  limit = 500,
+): Promise<WahaChatOverview[]> {
+  return getArray<WahaChatOverview>(
+    creds,
+    `/api/${enc(creds.session)}/chats/overview?limit=${limit}`,
+  );
+}
+
+/** Fetch a chat's message history (newest first). Media is not downloaded —
+ *  the sync stores a marker, mirroring inbound-webhook behaviour. */
+export function wahaFetchMessages(
+  creds: WahaCreds,
+  chatId: string,
+  limit: number,
+): Promise<WahaHistoryMessage[]> {
+  return getArray<WahaHistoryMessage>(
+    creds,
+    `/api/${enc(creds.session)}/chats/${enc(chatId)}/messages?limit=${limit}&downloadMedia=false`,
+  );
+}
