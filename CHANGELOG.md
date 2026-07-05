@@ -9,6 +9,26 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.32.0] — 2026-07-05
+
+WhatsApp providers are now **managed by the platform owner and hidden from
+tenants** — so a client admin can't see which gateway (and therefore your
+cost/margin) is behind their number. No migration.
+
+### Changed
+
+- **Provider config moved to the superadmin console.** In `/superadmin`,
+  each account has a **Manage WhatsApp** action to provision numbers for any
+  provider (Meta / Twilio / wsapi.chat) with their credentials. This is the
+  only place provider + credentials live now.
+- **Tenant WhatsApp settings are provider-blind.** A client admin sees only
+  their number(s) — label + connection status — never the provider name,
+  credentials, or IDs. The Meta credential form and the wsapi.chat connect
+  card were removed from the tenant UI.
+- For a provisioned number that still needs the customer to pair their phone
+  (QR providers), the tenant gets a generic **"Link your number"** QR — with
+  no mention of the underlying provider.
+
 ## [0.31.0] — 2026-07-05
 
 **Twilio** as a third WhatsApp provider + a provider registry. **Migration

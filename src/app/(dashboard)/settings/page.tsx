@@ -10,9 +10,7 @@ import { SettingsOverview } from '@/components/settings/settings-overview';
 import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
-import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
 import { WhatsAppNumbers } from '@/components/settings/whatsapp-numbers';
-import { WsapiConnect } from '@/components/settings/wsapi-connect';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { CannedResponsesSettings } from '@/components/settings/canned-responses-settings';
 import { BusinessHoursSettings } from '@/components/settings/business-hours-settings';
@@ -61,13 +59,7 @@ export default function SettingsPage() {
     profile: <ProfileForm />,
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
-    whatsapp: (
-      <div className="space-y-6">
-        <WhatsAppNumbers />
-        <WsapiConnect />
-        <WhatsAppConfig />
-      </div>
-    ),
+    whatsapp: <WhatsAppNumbers />,
     templates: <TemplateManager />,
     canned: <CannedResponsesSettings />,
     hours: <BusinessHoursSettings />,
