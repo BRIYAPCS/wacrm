@@ -9,6 +9,16 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.35.2] — 2026-07-05
+
+### Fixed
+
+- **WAHA pairing now recovers from a FAILED session.** WhatsApp cycles the QR
+  and drops the pairing session to `FAILED` after a bit; recovery used WAHA's
+  `/start`, which doesn't revive an existing session, so the dialog got stuck on
+  "Generating…". It now uses `/restart` (stop→start) and waits (bounded) for the
+  fresh QR to mint, so a single request reliably returns a scannable code.
+
 ## [0.35.1] — 2026-07-05
 
 ### Fixed
