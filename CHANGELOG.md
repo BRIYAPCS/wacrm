@@ -9,6 +9,18 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.43.0] — 2026-07-05
+
+### Added
+
+- **Redesigned message composer** (Teams-style). The action buttons now live
+  *inside* the input box: an emoji picker, a formatting toggle, attach, send
+  template, AI draft, saved replies, schedule, and Send.
+- **Emoji picker** in the composer — a categorized grid; inserts at the caret.
+- **Formatting toolbar** mapping to what WhatsApp actually renders: **bold**,
+  *italic*, ~~strikethrough~~, monospace, and bulleted / numbered lists.
+  Selecting text and clicking a button wraps it in the WhatsApp markers.
+
 ## [0.42.0] — 2026-07-05
 
 ### Added
