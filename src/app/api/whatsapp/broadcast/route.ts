@@ -170,6 +170,19 @@ export async function POST(request: Request) {
       )
     }
 
+    // This route broadcasts via Meta template messages. For a non-Meta default
+    // number the config holds a different secret (WAHA/WSAPI key, Twilio token)
+    // — never decrypt and send that to Meta. Reject with a clear message.
+    if (config.provider !== 'meta') {
+      return NextResponse.json(
+        {
+          error:
+            'Broadcasts currently require a Meta (Cloud API) number. Set a Meta number as your default to broadcast.',
+        },
+        { status: 400 },
+      )
+    }
+
     const accessToken = decrypt(config.access_token)
 
     // Load the template row once so sendTemplateMessage can build

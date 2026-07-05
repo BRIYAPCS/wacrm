@@ -123,12 +123,22 @@ export async function POST(request: Request) {
     // (multi-number), falling back to the account default.
     const config = await resolveAccountConfig(supabase, accountId, {
       preferId: conversation.whatsapp_config_id,
-      columns: 'phone_number_id, access_token',
+      columns: 'provider, phone_number_id, access_token',
     });
 
     if (!config) {
       return NextResponse.json(
         { error: 'WhatsApp not configured.' },
+        { status: 400 },
+      );
+    }
+
+    // Reactions go via the Meta Graph API. A non-Meta number's config carries
+    // a DIFFERENT secret (WAHA/WSAPI api-key, Twilio token) — never decrypt and
+    // send that to Meta. Reject clearly instead.
+    if (config.provider !== 'meta') {
+      return NextResponse.json(
+        { error: 'Reactions are only supported on Meta (Cloud API) numbers.' },
         { status: 400 },
       );
     }

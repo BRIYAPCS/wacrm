@@ -273,7 +273,11 @@ export async function sendMessageToConversation(
       void db
         .from('conversations')
         .update({ whatsapp_config_id: config.id })
-        .eq('id', conversationId);
+        .eq('id', conversationId)
+        .then(({ error }: { error: { message: string } | null }) => {
+          if (error)
+            console.warn('[send-message] stamp number failed:', error.message);
+        });
     }
 
     let wsId: string | null = null;
@@ -353,7 +357,11 @@ export async function sendMessageToConversation(
       void db
         .from('conversations')
         .update({ whatsapp_config_id: config.id })
-        .eq('id', conversationId);
+        .eq('id', conversationId)
+        .then(({ error }: { error: { message: string } | null }) => {
+          if (error)
+            console.warn('[send-message] stamp number failed:', error.message);
+        });
     }
 
     let wahaId: string | null = null;
@@ -430,7 +438,14 @@ export async function sendMessageToConversation(
       from: config.phone_number as string,
     };
     if (!conversation.whatsapp_config_id) {
-      void db.from('conversations').update({ whatsapp_config_id: config.id }).eq('id', conversationId);
+      void db
+        .from('conversations')
+        .update({ whatsapp_config_id: config.id })
+        .eq('id', conversationId)
+        .then(({ error }: { error: { message: string } | null }) => {
+          if (error)
+            console.warn('[send-message] stamp number failed:', error.message);
+        });
     }
 
     let twId: string | null = null;

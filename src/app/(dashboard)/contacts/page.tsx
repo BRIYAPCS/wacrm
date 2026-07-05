@@ -136,7 +136,10 @@ export default function ContactsPage() {
 
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
-    const term = debouncedSearch.trim();
+    // Strip characters that would break the PostgREST `.or()` grammar
+    // (commas/parens) or act as ILIKE wildcards (`%`/`_`) — mirrors the v1
+    // API's sanitizeSearch. Otherwise searching "Doe, John" or "a)" 400s.
+    const term = debouncedSearch.replace(/[^\p{L}\p{N} +@.\-_]/gu, '').trim();
 
     let contactRows: Contact[];
     let count: number;

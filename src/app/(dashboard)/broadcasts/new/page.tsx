@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -38,38 +38,48 @@ export default function NewBroadcastPage() {
     };
     csvContacts?: { phone: string; name?: string }[];
     excludeTagIds?: string[];
-  }>(() => {
-    // Pre-seed from a "Broadcast to selected" action on the Contacts page.
-    // Guarded by typeof window (never runs on the server); reading it here
-    // rather than in an effect avoids a flash of the default audience.
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = sessionStorage.getItem('broadcast:preseed');
-        if (raw) {
-          sessionStorage.removeItem('broadcast:preseed');
-          const csvContacts = JSON.parse(raw) as { phone: string; name?: string }[];
-          if (Array.isArray(csvContacts) && csvContacts.length > 0) {
-            return { type: 'csv' as const, csvContacts };
-          }
-        }
-      } catch {
-        /* ignore a malformed pre-seed */
-      }
-    }
-    return { type: 'all' as const };
-  });
+  }>({ type: 'all' });
 
-  // Tell the user their selection carried over (only fires for a pre-seed).
+  // Consume a "Broadcast to selected" pre-seed from the Contacts page exactly
+  // once. This lives in an effect — NOT the useState initializer — because a
+  // state initializer must be pure: React (Strict Mode) may double-invoke or
+  // discard it, and a side effect there (removeItem) could consume the pre-seed
+  // on a thrown-away pass, silently falling back to "all contacts".
+  const preseedConsumed = useRef(false);
   useEffect(() => {
-    if (audience.type === 'csv' && audience.csvContacts?.length) {
-      toast.success(
-        `Audience set to ${audience.csvContacts.length} selected contact${
-          audience.csvContacts.length === 1 ? '' : 's'
-        }.`,
-      );
+    if (preseedConsumed.current) return;
+    preseedConsumed.current = true;
+    let raw: string | null = null;
+    try {
+      raw = sessionStorage.getItem('broadcast:preseed');
+      if (raw) sessionStorage.removeItem('broadcast:preseed');
+    } catch {
+      return;
     }
-    // Mount-only — the pre-seed is consumed on first render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { phone?: unknown; name?: unknown }[];
+      const csvContacts = (Array.isArray(parsed) ? parsed : [])
+        .filter(
+          (c): c is { phone: string; name?: string } =>
+            typeof c?.phone === 'string' && c.phone.length > 0,
+        )
+        .map((c) => ({
+          phone: c.phone,
+          name: typeof c.name === 'string' ? c.name : undefined,
+        }));
+      if (csvContacts.length > 0) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setAudience({ type: 'csv', csvContacts });
+        toast.success(
+          `Audience set to ${csvContacts.length} selected contact${
+            csvContacts.length === 1 ? '' : 's'
+          }.`,
+        );
+      }
+    } catch {
+      /* malformed pre-seed — ignore */
+    }
   }, []);
   const [variables, setVariables] = useState<
     Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>

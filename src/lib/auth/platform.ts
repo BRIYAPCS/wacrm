@@ -70,10 +70,13 @@ export async function requirePlatformAdmin(): Promise<PlatformAdminContext> {
 
   let ok = !!row;
 
-  // 2. env allowlist bootstrap.
+  // 2. env allowlist bootstrap. Only honor a CONFIRMED email — otherwise, on a
+  // deploy with email confirmation disabled (or an OAuth provider returning an
+  // unverified address), someone could register a listed admin email and
+  // self-escalate to the service-role client.
   if (!ok) {
     const email = user.email?.toLowerCase();
-    ok = !!email && envAllowlist().includes(email);
+    ok = !!email && !!user.email_confirmed_at && envAllowlist().includes(email);
   }
 
   if (!ok) throw new NotPlatformAdminError();

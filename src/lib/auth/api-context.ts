@@ -119,11 +119,17 @@ export async function requireApiKey(
   // counterpart of the dashboard's requireFeature and closes what would
   // otherwise be a backdoor around every UI gate.
   const admin = supabaseAdmin();
-  const { data: acct } = await admin
+  const { data: acct, error: acctErr } = await admin
     .from('accounts')
     .select('plan, plan_overrides')
     .eq('id', row.account_id)
     .maybeSingle();
+  // Fail CLOSED: if we can't read the account's plan (DB error / missing row),
+  // never fall through to the default tier — that would open the paid API for
+  // free on a transient hiccup or a missing NEXT_PUBLIC_DEFAULT_PLAN.
+  if (acctErr || !acct) {
+    throw forbidden('Could not verify account entitlements — try again.');
+  }
   const entitlements = resolveEntitlements(
     effectiveTier(
       (acct as { plan?: string | null } | null)?.plan ?? null,

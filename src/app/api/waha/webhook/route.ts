@@ -146,6 +146,14 @@ export async function POST(request: Request) {
   try {
     // Resolve the real phone (handles WhatsApp LID addressing — see helper).
     const senderAddress = resolveSenderAddress(p);
+    // Never fabricate a phone from an unresolved LID: if we couldn't map the
+    // `@lid` to a real @s.whatsapp.net/@c.us number, dropping the digits would
+    // create a bogus contact and send replies to a number that doesn't exist.
+    // Ack and skip instead.
+    if (senderAddress.endsWith("@lid")) {
+      console.warn(`[waha webhook] unresolved LID ${from} — no SenderAlt; skipping`);
+      return NextResponse.json({ received: true, ignored: "unresolved-lid" });
+    }
     const phone = chatIdToPhone(senderAddress);
     if (from.endsWith("@lid")) {
       console.log(
