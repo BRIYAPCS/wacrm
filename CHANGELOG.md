@@ -9,6 +9,18 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.44.0] — 2026-07-05
+
+### Added
+
+- **Sender names in the thread** (Teams-style). Each run of messages now shows
+  who sent it — the agent/admin's name above outbound replies, the participant
+  in a group, the contact in a 1:1. A new run (and a fresh name label) starts
+  when the sender changes or after a 5-minute gap. This makes a thread that's
+  been handled by several agents legible at a glance.
+- Per-message time switched to a 12-hour clock ("10:08 AM") to match the
+  Teams-style layout; date separators (Today / Yesterday / full date) unchanged.
+
 ## [0.43.0] — 2026-07-05
 
 ### Added
