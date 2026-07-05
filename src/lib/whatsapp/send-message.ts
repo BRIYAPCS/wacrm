@@ -37,6 +37,11 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
 import { wsapiSendText, wsapiSendImage, WsapiError } from '@/lib/wsapi/client';
+import {
+  twilioSendText,
+  twilioSendMedia,
+  TwilioError,
+} from '@/lib/whatsapp/providers/twilio';
 import type { MessageTemplate } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 
@@ -334,6 +339,75 @@ export async function sendMessageToConversation(
       .eq('id', conversationId);
 
     return { messageId: row.id, whatsappMessageId: wsId || '' };
+  }
+
+  if (config.provider === 'twilio') {
+    const creds = {
+      accountSid: config.provider_account_id as string,
+      authToken: decrypt(config.access_token),
+      from: config.phone_number as string,
+    };
+    if (!conversation.whatsapp_config_id) {
+      void db.from('conversations').update({ whatsapp_config_id: config.id }).eq('id', conversationId);
+    }
+
+    let twId: string | null = null;
+    try {
+      if (isMediaKind) {
+        if (!mediaUrl) {
+          throw new SendMessageError('bad_request', 'Media URL required.', 400);
+        }
+        twId = (await twilioSendMedia(creds, sanitizedPhone, mediaUrl, contentText || undefined)).messageId;
+      } else if (messageType === 'text') {
+        twId = (await twilioSendText(creds, sanitizedPhone, contentText!)).messageId;
+      } else {
+        throw new SendMessageError(
+          'bad_request',
+          'Templates on Twilio use Content templates — not supported here yet.',
+          400,
+        );
+      }
+    } catch (err) {
+      if (err instanceof SendMessageError) throw err;
+      if (err instanceof TwilioError) {
+        throw new SendMessageError('twilio_error', err.message, err.status);
+      }
+      throw new SendMessageError(
+        'twilio_error',
+        err instanceof Error ? err.message : 'Twilio send failed',
+        502,
+      );
+    }
+
+    const { data: row, error: insErr } = await db
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_type: 'agent',
+        sender_id: senderId || null,
+        content_type: messageType,
+        content_text: contentText || null,
+        media_url: mediaUrl || null,
+        message_id: twId || `twilio-out-${conversationId}-${Date.now()}`,
+        status: 'sent',
+        reply_to_message_id: replyToMessageId || null,
+      })
+      .select('id')
+      .single();
+    if (insErr || !row) {
+      throw new SendMessageError('db_error', `Sent via Twilio but failed to save: ${insErr?.message}`, 500);
+    }
+
+    await db
+      .from('conversations')
+      .update({
+        last_message_text: contentText || `[${messageType}]`,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId);
+
+    return { messageId: row.id, whatsappMessageId: twId || '' };
   }
   // --- end provider routing ----------------------------------------------
 

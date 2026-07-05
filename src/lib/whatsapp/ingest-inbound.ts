@@ -1,20 +1,20 @@
 // ============================================================
-// Ingest an inbound wsapi.chat message into the wacrm inbox.
+// Ingest an inbound WhatsApp message into the inbox — provider-agnostic.
 //
-// The webhook resolves WHICH account + number (whatsapp_config row) an
-// event belongs to from the X-Instance-Id header, and passes it here.
-// Mirrors the Meta webhook's contact/conversation/message flow, stamping
-// the conversation with the wsapi config id so replies route back out via
-// WSAPI. Uses the service role.
+// The provider webhook resolves WHICH account + number (whatsapp_config
+// row) an event belongs to and passes it here. Mirrors the Meta webhook's
+// contact/conversation/message flow, stamping the conversation with the
+// config id so replies route back out through the same number/provider.
+// Uses the service role.
 // ============================================================
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
 
-export interface InboundWsapi {
+export interface InboundMessage {
   accountId: string;
   ownerUserId: string;
-  /** whatsapp_config.id of the wsapi number that received the message. */
+  /** whatsapp_config.id of the number that received the message. */
   configId: string;
   phone: string; // "+1240..."
   name: string;
@@ -24,8 +24,8 @@ export interface InboundWsapi {
 }
 
 /** Returns { conversationId } on success, or null if it couldn't ingest. */
-export async function ingestInboundWsapi(
-  msg: InboundWsapi,
+export async function ingestInboundMessage(
+  msg: InboundMessage,
 ): Promise<{ conversationId: string } | null> {
   const admin = supabaseAdmin();
 
@@ -57,7 +57,7 @@ export async function ingestInboundWsapi(
         if (!raced) return null;
         contactId = raced.id;
       } else {
-        console.error("[wsapi] contact insert failed:", error);
+        console.error("[inbound] contact insert failed:", error);
         return null;
       }
     } else {
@@ -75,7 +75,6 @@ export async function ingestInboundWsapi(
     .maybeSingle();
   if (conv) {
     conversationId = conv.id;
-    // Re-point the thread at the number that just received a message.
     if (conv.whatsapp_config_id !== msg.configId) {
       await admin
         .from("conversations")
@@ -101,7 +100,7 @@ export async function ingestInboundWsapi(
         .eq("contact_id", contactId)
         .maybeSingle();
       if (!raced) {
-        console.error("[wsapi] conversation insert failed:", error);
+        console.error("[inbound] conversation insert failed:", error);
         return null;
       }
       conversationId = raced.id;
@@ -122,7 +121,7 @@ export async function ingestInboundWsapi(
   });
   if (msgErr) {
     if (isUniqueViolation(msgErr)) return { conversationId }; // dedupe
-    console.error("[wsapi] message insert failed:", msgErr);
+    console.error("[inbound] message insert failed:", msgErr);
     return null;
   }
 

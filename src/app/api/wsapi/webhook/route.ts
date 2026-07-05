@@ -14,7 +14,7 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 
 import { jidToPhone } from "@/lib/wsapi/config";
-import { ingestInboundWsapi } from "@/lib/wsapi/ingest";
+import { ingestInboundMessage } from "@/lib/whatsapp/ingest-inbound";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -141,7 +141,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await ingestInboundWsapi({
+    const result = await ingestInboundMessage({
       accountId: cfg.account_id,
       ownerUserId: cfg.user_id,
       configId: cfg.id,

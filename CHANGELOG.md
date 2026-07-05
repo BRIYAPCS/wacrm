@@ -9,6 +9,28 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.31.0] — 2026-07-05
+
+**Twilio** as a third WhatsApp provider + a provider registry. **Migration
+required:** apply `supabase/migrations/052_whatsapp_twilio.sql`.
+
+### Added
+
+- **Twilio WhatsApp**: send (text + media) and an inbound webhook
+  (`/api/whatsapp/twilio/webhook`, `X-Twilio-Signature` verified). A Twilio
+  number is stored like any other (Account SID + encrypted Auth Token +
+  sender), routed by the send core.
+- A **WhatsApp provider registry** (`src/lib/whatsapp/providers/`) listing
+  Meta / Twilio / wsapi.chat and their capabilities — adding a provider is
+  now a one-entry change, mirroring the AI provider registry.
+- Inbound ingest is now provider-agnostic (`ingest-inbound.ts`), shared by
+  the wsapi.chat and Twilio webhooks.
+
+### Notes
+
+- Next up: provider configuration moves into the superadmin console and is
+  hidden from tenant admins (so the underlying provider/cost isn't exposed).
+
 ## [0.30.0] — 2026-07-05
 
 **Two ways to connect WhatsApp** — Meta Cloud API (as before) *and*
