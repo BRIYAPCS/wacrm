@@ -598,30 +598,58 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
   ): Promise<number> {
     const supabase = createClient();
 
-    if (audience.type === 'all') {
-      const { count } = await supabase
-        .from('contacts')
-        .select('*', { count: 'exact', head: true });
-      return count ?? 0;
+    // A CSV audience is an arbitrary phone list — exclude tags don't apply.
+    if (audience.type === 'csv' && audience.csvContacts) {
+      return audience.csvContacts.length;
     }
-    if (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) {
+
+    // Base contact-id set (null = "all contacts").
+    let baseIds: Set<string> | null = null;
+    if (audience.type === 'all') {
+      baseIds = null;
+    } else if (
+      audience.type === 'tags' &&
+      audience.tagIds &&
+      audience.tagIds.length > 0
+    ) {
       const { data } = await supabase
         .from('contact_tags')
         .select('contact_id')
         .in('tag_id', audience.tagIds);
-      return new Set((data ?? []).map((r) => r.contact_id)).size;
-    }
-    if (audience.type === 'custom_field' && audience.customField) {
+      baseIds = new Set((data ?? []).map((r) => r.contact_id));
+    } else if (audience.type === 'custom_field' && audience.customField) {
       const contacts = await resolveCustomFieldAudience(
         supabase,
         audience.customField,
       );
-      return contacts.length;
+      baseIds = new Set(contacts.map((c) => c.id));
+    } else {
+      return 0; // partially-configured audience
     }
-    if (audience.type === 'csv' && audience.csvContacts) {
-      return audience.csvContacts.length;
+
+    // Exclude tags apply to every non-CSV audience — mirror resolveAudience so
+    // the review/confirm count matches what actually sends.
+    let excludeSet: Set<string> | null = null;
+    if (audience.excludeTagIds && audience.excludeTagIds.length > 0) {
+      const { data } = await supabase
+        .from('contact_tags')
+        .select('contact_id')
+        .in('tag_id', audience.excludeTagIds);
+      excludeSet = new Set((data ?? []).map((r) => r.contact_id));
     }
-    return 0;
+
+    if (baseIds) {
+      if (!excludeSet) return baseIds.size;
+      let n = 0;
+      for (const id of baseIds) if (!excludeSet.has(id)) n += 1;
+      return n;
+    }
+    // "all" — total minus the excluded set.
+    const { count } = await supabase
+      .from('contacts')
+      .select('*', { count: 'exact', head: true });
+    const total = count ?? 0;
+    return excludeSet ? Math.max(0, total - excludeSet.size) : total;
   }
 
   return {
