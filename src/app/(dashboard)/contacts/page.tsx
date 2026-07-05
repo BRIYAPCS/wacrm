@@ -48,6 +48,8 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  Tag as TagIcon,
+  Download,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -95,6 +97,7 @@ export default function ContactsPage() {
   // Bulk selection (page-scoped — only the loaded rows are selectable)
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkTagging, setBulkTagging] = useState(false);
 
   // All tags for display
   const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
@@ -331,6 +334,78 @@ export default function ContactsPage() {
     setBulkDeleteOpen(false);
   }
 
+  // Apply a tag to every selected contact. Idempotent (unique
+  // contact_id+tag_id), so re-tagging an already-tagged contact is a no-op.
+  // Updates the visible tag chips in place so the selection survives.
+  async function applyBulkTag(tagId: string) {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBulkTagging(true);
+
+    const rows = ids.map((cid) => ({ contact_id: cid, tag_id: tagId }));
+    const { error } = await supabase
+      .from('contact_tags')
+      .upsert(rows, { onConflict: 'contact_id,tag_id', ignoreDuplicates: true });
+
+    setBulkTagging(false);
+    if (error) {
+      toast.error('Failed to tag contacts');
+      return;
+    }
+
+    const tag = tagsMap[tagId];
+    if (tag) {
+      setContacts((prev) =>
+        prev.map((c) =>
+          selected.has(c.id) && !(c.tags ?? []).some((t) => t.id === tagId)
+            ? { ...c, tags: [...(c.tags ?? []), tag] }
+            : c,
+        ),
+      );
+    }
+    toast.success(
+      `Tagged ${ids.length} contact${ids.length === 1 ? '' : 's'}`,
+    );
+  }
+
+  // Export the selected contacts as a CSV the user can open in Excel/Sheets.
+  // Values are quoted and CSV-injection-guarded (a leading =/+/-/@ is prefixed
+  // with ' so a spreadsheet can't execute it as a formula).
+  function exportSelected() {
+    const rows = contacts.filter((c) => selected.has(c.id));
+    if (rows.length === 0) return;
+
+    const esc = (v: unknown) => {
+      let s = String(v ?? '');
+      if (/^[=+\-@]/.test(s)) s = `'${s}`;
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+
+    const header = ['Name', 'Phone', 'Email', 'Company', 'Tags', 'Created'];
+    const lines = [header.join(',')];
+    for (const c of rows) {
+      lines.push(
+        [
+          esc(c.name),
+          esc(c.phone),
+          esc(c.email),
+          esc(c.company),
+          esc((c.tags ?? []).map((t) => t.name).join('; ')),
+          esc(new Date(c.created_at).toISOString().slice(0, 10)),
+        ].join(','),
+      );
+    }
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `contacts-${rows.length}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${rows.length} contact${rows.length === 1 ? '' : 's'}`);
+  }
+
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const hasNext = page < totalPages - 1;
   const hasPrev = page > 0;
@@ -531,6 +606,66 @@ export default function ContactsPage() {
             >
               Clear
             </Button>
+
+            {/* Bulk tag — apply an existing tag to every selected contact. */}
+            {canEdit && allTags.length > 0 && (
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={bulkTagging}
+                      className="border-border text-muted-foreground hover:bg-muted"
+                    />
+                  }
+                >
+                  {bulkTagging ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <TagIcon className="size-4" />
+                  )}
+                  Tag
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-56 p-0">
+                  <div className="px-3 py-2 border-b border-border">
+                    <span className="text-sm font-medium text-popover-foreground">
+                      Apply a tag
+                    </span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {allTags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        onClick={() => applyBulkTag(tag.id)}
+                        disabled={bulkTagging}
+                        className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left hover:bg-muted/50 disabled:opacity-50"
+                      >
+                        <span
+                          className="size-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: tag.color }}
+                        />
+                        <span className="text-sm text-popover-foreground truncate">
+                          {tag.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+
+            {/* Export the selected rows to CSV — read-only, no gate. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportSelected}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              <Download className="size-4" />
+              Export
+            </Button>
+
             <GatedButton
               variant="destructive"
               size="sm"
