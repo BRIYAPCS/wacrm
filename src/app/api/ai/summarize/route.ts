@@ -12,7 +12,7 @@
 
 import { NextResponse } from "next/server";
 
-import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { requireRole, requireFeature, toErrorResponse } from "@/lib/auth/account";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -51,7 +51,9 @@ function extractJson(raw: string): Record<string, unknown> | null {
 
 export async function POST(request: Request) {
   try {
-    const { supabase, accountId, userId } = await requireRole("agent");
+    const ctx = await requireRole("agent");
+    requireFeature(ctx, "ai", "The AI assistant");
+    const { supabase, accountId, userId } = ctx;
 
     const userLimit = checkRateLimit(`ai-summary:${userId}`, RATE_LIMITS.aiDraft);
     if (!userLimit.success) return rateLimitResponse(userLimit);

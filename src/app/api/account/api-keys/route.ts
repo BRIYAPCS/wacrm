@@ -22,6 +22,8 @@ import { NextResponse } from 'next/server';
 import {
   getCurrentAccount,
   requireRole,
+  requireFeature,
+  requireWithinLimit,
   toErrorResponse,
 } from '@/lib/auth/account';
 import { generateApiKey } from '@/lib/api-keys/keys';
@@ -77,6 +79,16 @@ export async function POST(request: Request) {
       RATE_LIMITS.adminAction
     );
     if (!limit.success) return rateLimitResponse(limit);
+
+    // Plan gate: API access is a paid-tier feature, and the number of keys
+    // is capped. Count active (non-revoked) keys before minting.
+    requireFeature(ctx, 'public_api', 'The public API');
+    const { count: activeKeys } = await ctx.supabase
+      .from('api_keys')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', ctx.accountId)
+      .is('revoked_at', null);
+    requireWithinLimit(ctx, 'api_keys', activeKeys ?? 0, 'API keys');
 
     const body = (await request.json().catch(() => null)) as {
       name?: unknown;

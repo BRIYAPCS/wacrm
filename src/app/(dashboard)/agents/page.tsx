@@ -5,6 +5,7 @@ import { Bot, Sparkles, Settings2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { AiPlayground } from '@/components/agents/ai-playground';
 import { AiConfig } from '@/components/settings/ai-config';
+import { FeatureGate } from '@/components/plans/feature-gate';
 
 type Tab = 'playground' | 'setup';
 
@@ -32,6 +33,11 @@ export default function AgentsPage() {
   }, []);
 
   return (
+    <FeatureGate
+      feature="ai"
+      title="AI Agents"
+      description="AI agents aren't included in your current plan. Upgrade to set up an AI assistant and knowledge base."
+    >
     <div>
       <div className="flex items-center gap-2">
         <Bot className="h-6 w-6 text-primary" />
@@ -69,5 +75,6 @@ export default function AgentsPage() {
         </Tabs>
       )}
     </div>
+    </FeatureGate>
   );
 }

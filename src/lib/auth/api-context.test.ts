@@ -5,10 +5,24 @@ import type { ApiKeyRow } from "@/lib/api-keys/store";
 import { ApiError } from "@/lib/api/v1/respond";
 import { __resetRateLimitForTests, RATE_LIMITS } from "@/lib/rate-limit";
 
-// Mock the service-role client factory — requireApiKey only stashes
-// the returned client in the context; tests never call through it.
+// Mock the service-role client factory. requireApiKey now also reads the
+// key's account row to resolve plan entitlements, so the mock models a
+// `.from('accounts').select().eq().maybeSingle()` chain returning the
+// configurable `mockPlan`. (`null` plan → instance default → 'advanced'.)
+let mockPlan: string | null = null;
 vi.mock("@/lib/flows/admin-client", () => ({
-  supabaseAdmin: () => ({ __isMockAdminClient: true }),
+  supabaseAdmin: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({
+            data: { plan: mockPlan, plan_overrides: {} },
+            error: null,
+          }),
+        }),
+      }),
+    }),
+  }),
 }));
 
 // Mock the store so we control which row a hash resolves to.
@@ -47,6 +61,7 @@ beforeEach(() => {
   __resetRateLimitForTests();
   findActiveKeyByHash.mockReset();
   touchLastUsed.mockReset();
+  mockPlan = null; // default: advanced (public_api enabled)
 });
 
 afterEach(() => {
@@ -115,6 +130,12 @@ describe("requireApiKey", () => {
     findActiveKeyByHash.mockResolvedValue(row({ scopes: ["messages:send"] }));
     const ctx = await requireApiKey(reqWith(`Bearer ${KEY}`), "messages:send");
     expect(ctx.accountId).toBe("acct-1");
+  });
+
+  it("403s when the account's plan doesn't include public_api", async () => {
+    mockPlan = "basic"; // basic tier has public_api: false
+    findActiveKeyByHash.mockResolvedValue(row());
+    await expectApiError(requireApiKey(reqWith(`Bearer ${KEY}`)), "forbidden", 403);
   });
 
   it("429s once the per-key budget is exhausted", async () => {

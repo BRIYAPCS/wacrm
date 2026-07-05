@@ -7,7 +7,7 @@
 
 import { NextResponse } from 'next/server'
 
-import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { requireRole, requireFeature, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { extractFromFile, ExtractError, MAX_SOURCE_BYTES } from '@/lib/ai/extract'
 import { createAndIngestDocument } from '@/lib/ai/knowledge'
@@ -19,7 +19,9 @@ export const maxDuration = 60
 
 export async function POST(request: Request) {
   try {
-    const { supabase, accountId, userId } = await requireRole('admin')
+    const ctx = await requireRole('admin')
+    requireFeature(ctx, 'ai', 'The AI knowledge base')
+    const { supabase, accountId, userId } = ctx
     const limit = checkRateLimit(`ai-kb-upload:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 

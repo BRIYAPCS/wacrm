@@ -9,6 +9,33 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.27.0] — 2026-07-04
+
+Subscription tiers are now **enforced** (Phase 2). No migration. Behavior
+is unchanged for existing accounts — everyone still defaults to the top
+tier — but once an account is put on a lower plan, gated features lock.
+
+### Added
+
+- **Sidebar** locks plan-gated modules (AI Agents, Flows, Automations) with
+  a lock icon linking to billing, instead of a live link.
+- **Page gates** (`FeatureGate` + `UpgradePrompt`): visiting a gated module
+  shows an upgrade screen rather than the feature.
+- **Server enforcement** on the cost/abuse-sensitive routes: the whole
+  public REST API (`/api/v1`) requires the `public_api` feature; API-key
+  creation enforces the `public_api` + `api_keys` limit; team invitations
+  enforce the `seats` limit; and the AI routes (draft, summarize,
+  playground, knowledge ingest) require the `ai` feature. A gated call
+  returns `403` with `code: "plan_upgrade_required"`.
+
+### Notes
+
+- Client gates are cosmetic; the server is always authoritative (it
+  re-resolves the plan on every request).
+- Remaining server-route gates for Flows/Automations and the multi-number /
+  broadcast / audit limits are a follow-up; those modules' page access is
+  already gated.
+
 ## [0.26.0] — 2026-07-04
 
 Foundation for **subscription tiers** (Basic / Pro / Advanced) — no
